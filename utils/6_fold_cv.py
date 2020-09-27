@@ -24,7 +24,6 @@ def viewer(original_dir, data_dir, config, visualization = False):
     gt_classes = [0 for _ in range(config.num_classes)]
     positive_classes = [0 for _ in range(config.num_classes)]
     true_positive_classes = [0 for _ in range(config.num_classes)]
-    
 
     for file_name in data_dir:
         predict_data = read_ply(file_name)
