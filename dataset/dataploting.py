@@ -20,23 +20,25 @@ class Plot:
         return colors
 
     @staticmethod
-    def draw_pointcloud(pointcloud_xyzrgb):
+    def draw_pointcloud(pointcloud_xyzrgb, name):
         pointcloud = open3d.geometry.PointCloud()
         pointcloud.points = open3d.utility.Vector3dVector(pointcloud_xyzrgb[:, 0:3])
 
         if pointcloud_xyzrgb.shape[1] == 3:
-            open3d.visualization.draw_geometries([pointcloud])
+            open3d.visualization.draw_geometries([pointcloud], name)
 
-        if np.max(pointcloud_xyzrgb[:, 3:6]) > 20:
-            pointcloud.colors = open3d.utility.Vector3dVector(pointcloud_xyzrgb[:, 3:6] / 255.)
-        else:
-            pointcloud.colors = open3d.utility.Vector3dVector(pointcloud_xyzrgb[:, 3:6])
-        
-        open3d.visualization.draw_geometries([pointcloud])
+        try:
+            if np.max(pointcloud_xyzrgb[:, 3:6]) > 20:
+                pointcloud.colors = open3d.utility.Vector3dVector(pointcloud_xyzrgb[:, 3:6] / 255.)
+            else:
+                pointcloud.colors = open3d.utility.Vector3dVector(pointcloud_xyzrgb[:, 3:6])
+            open3d.visualization.draw_geometries([pointcloud], name)
+        except ValueError:
+            pass
         return 0
 
     @staticmethod
-    def draw_pointcloud_semantic_instance(pointcloud_xyz, pointcloud_semantic_instance, plot_colors=None):
+    def draw_pointcloud_semantic_instance(pointcloud_xyz, pointcloud_semantic_instance, name, plot_colors=None):
         if plot_colors is not None:
             instance_colors = plot_colors
         else:
@@ -71,5 +73,5 @@ class Plot:
             semantic_instance_bbox.append([[xmin, ymin, zmin], [xmax, ymax, zmax], [min(tp[0], 1.), min(tp[1], 1.), min(tp[2], 1.)]])
             
         Y_semantic_instance = np.concatenate([pointcloud_xyz[:, 0:3], Y_colors], axis=-1)
-        Plot.draw_pointcloud(Y_semantic_instance)
+        Plot.draw_pointcloud(Y_semantic_instance, name)
         return Y_semantic_instance

@@ -45,13 +45,35 @@ class DataProcessing:
 
     @staticmethod
     def load_label_semantickitti(filepath, remap_lut):
-        label = np.fromfile(filepath, dtype=np.np.uint32)
+        label = np.fromfile(filepath, dtype=np.uint32)
         label = label.reshape((-1))
         semnatic_label = label & 0xFFFF
         instance_label = label >> 16
         assert (semnatic_label + (instance_label << 16) == label).all()
         semnatic_label = remap_lut[semnatic_label]
         return semnatic_label.astype(np.int32)
+
+    @staticmethod
+    def get_pointcloud_list_semantickitti(dataset_path):
+        seq_list = np.sort(os.listdir(dataset_path))
+        file_list = []
+        for seq_index in seq_list:
+            if(int(seq_index)<11):
+                seq_path = os.path.join(dataset_path, seq_index)
+                pointcloud_path = os.path.join(seq_path, 'velodyne')
+                file_list.append([os.path.join(pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path))])
+        return np.concatenate(file_list, axis=0)
+
+    @staticmethod
+    def get_label_list_semantickitti(dataset_path):
+        seq_list = np.sort(os.listdir(dataset_path))
+        file_list = []
+        for seq_index in seq_list:
+            if(int(seq_index)<11):
+                seq_path = os.path.join(dataset_path, seq_index)
+                label_path = os.path.join(seq_path, 'labels')
+                file_list.append([os.path.join(label_path, file) for file in np.sort(os.listdir(label_path))])
+        return np.concatenate(file_list, axis=0)
 
     @staticmethod
     def get_file_list(dataset_path, test_scan_num):
@@ -66,17 +88,15 @@ class DataProcessing:
             pointcloud_path = os.path.join(sequence_path, 'velodyne')
 
             if sequence_id == '08':
-                val_file_list.append(os.path.join(pointcloud_path, file)
-                                     for file in np.sort(os.listdir(pointcloud_path)))
+                val_file_list.append(os.path.join(pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path)))
                 if sequence_id == test_scan_num:
-                    test_file_list.append(os.path.join(
-                        pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path)))
-                elif int(sequence_id) >= 11 and sequence_id == test_scan_num:
-                    test_file_list.append(os.path.join(
-                        pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path)))
-                elif sequence_id in ['00', '01', '02', '03', '04', '05', '06', '07', '09', '10']:
-                    train_file_list.append(os.path.join(
-                        pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path)))
+                    test_file_list.append(os.path.join(pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path)))
+            elif int(sequence_id) >= 11 and sequence_id == test_scan_num:
+                test_file_list.append(os.path.join(
+                    pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path)))
+            elif sequence_id in ['00', '01', '02', '03', '04', '05', '06', '07', '09', '10']:
+                train_file_list.append(os.path.join(
+                    pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path)))
 
         train_file_list = np.concatenate(
             [train_file for train_file in train_file_list], axis=0)

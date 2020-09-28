@@ -9,7 +9,6 @@ import torch.nn.functional as F
 import torchsummary
 import numpy as np
 import sklearn
-import net.net_utils as net_utils
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(base_dir)
@@ -22,6 +21,7 @@ sys.path.append(utils_dir)
 sys.path.append(dataset_dir)
 sys.path.append(results_dir)
 
+# import net.net_utils as net_utils
 from dataset.dataprocessing import DataProcessing
 
 def log_out(out_str, f_out):
@@ -29,11 +29,31 @@ def log_out(out_str, f_out):
     f_out.flush()
     print(out_str)
 
+class SharedMLP(nn.Sequential):
+    def __init__(self, args, bn, activation=True):
+        super(SharedMLP, self).__init__()
+        for i in range(len(args) - 1):
+            self.add_module(
+                'SharedMLP_conv2d_layer{}'.format(i),
+                nn.Conv2d(args[i], args[i + 1], kernel_size=(1, 1), stride=(1, 1), bias=False)
+            )
+            if bn==True:
+                self.add_module(
+                    'SharedMLP_batchnorm_layer{}'.format(i),
+                    nn.BatchNorm2d(args[i + 1], 1e-6, 0.99)
+                )
+            if activation==True:
+                self.add_module(
+                    'SharedMLP_activation_layer{}'.format(i),
+                    nn.LeakyReLU(0.2, True)
+                )
+
+
 class AttentivePooling(nn.Module):
     def __init__(self, channel_input, channel_output):
         super(AttentivePooling, self).__init__()
         self.AttentivePooling_fc = nn.Conv2d(channel_input, channel_input, (1, 1), bias=False)
-        self.AttentivePooling_mlp = net_utils.Conv2d(channel_input, channel_output, kernel_size=(1, 1), bn=True)
+        self.AttentivePooling_mlp = SharedMLP([channel_input, channel_output], bn=True)
     
     def forward(self, feature_set):
         feature_set = self.AttentivePooling_fc(feature_set) # feature_set:(batch_size, num_points, num_neighbour, channels)
@@ -43,12 +63,13 @@ class AttentivePooling(nn.Module):
         feature = self.AttentivePooling_mlp(weighted_score_sum)
         return feature
 
+
 class BuildingBlock(nn.Module):
     def __init__(self, channel_out):
         super(BuildingBlock, self).__init__()
-        self.BuildingBlock_mlp_1 = net_utils.Conv2d(10, channel_out // 2, kernel_size=(1, 1), bn=True)
+        self.BuildingBlock_mlp_1 = SharedMLP([10, channel_out // 2], bn=True)
         self.BuildingBlock_attentivepooling_1 = AttentivePooling(channel_out, channel_out // 2)
-        self.BuildingBlock_mlp_2 = net_utils.Conv2d(channel_out // 2, channel_out // 2, kernel_size=(1, 1), bn=True)
+        self.BuildingBlock_mlp_2 = SharedMLP([channel_out // 2, channel_out // 2], bn=True)
         self.BuildingBlock_attentivepooling_2 = AttentivePooling(channel_out, channel_out)
 
     def forward(self, xyz, feature, neighbour_index):
@@ -90,10 +111,10 @@ class DilatedResBlock(nn.Module):
     def __init__(self, channel_input, channel_output):
         super(DilatedResBlock, self).__init__()
 
-        self.DilatedResBlock_mlp1 = net_utils.Conv2d(channel_input, channel_output // 2, kernel_size=(1, 1), bn=True)
+        self.DilatedResBlock_mlp1 = SharedMLP([channel_input, channel_output // 2], bn=True)
         self.lfa = BuildingBlock(channel_output)
-        self.DilatedResBlock_mlp2 = net_utils.Conv2d(channel_output, channel_output * 2, kernel_size=(1, 1), bn=True, activation=None)
-        self.DilatedResBlock_mlp3 = net_utils.Conv2d(channel_input, channel_output * 2, kernel_size=(1, 1), bn=True, acivation=None)
+        self.DilatedResBlock_mlp2 = SharedMLP([channel_output, channel_output * 2], bn=True)
+        self.DilatedResBlock_mlp3 = SharedMLP([channel_input, channel_output * 2], bn=True)
         
     def forward(self, feature, xyz, neighbour_index):
         feature_pointcloud = self.DilatedResBlock_mlp1(feature)
@@ -103,7 +124,7 @@ class DilatedResBlock(nn.Module):
         return F.leaky_relu(feature_pointcloud + feature_shortcut, negative_slope=0.2)
         
 class RandLANET(nn.Module):
-    def __init__(self, dataset, config):
+    def __init__(self, dataset_name, config):
         super(RandLANET, self).__init__()
         self.config = config
         if self.config.save:
@@ -113,25 +134,13 @@ class RandLANET(nn.Module):
                 self.save_path = self.config.save_path
             os.makedirs(self.save_path) if os.path.exists(self.save_path) else None
         
-        # input
-        flat_inputs = dataset.flat_inputs
-        self.input = dict()
-        num_layers = self.config.num_layers
-        self.inputs['xyz'] = flat_inputs[:num_layers]
-        self.inputs['neighbour_index'] = flat_inputs[num_layers: 2 * num_layers]
-        self.inputs['sub_index'] = flat_inputs[2 * num_layers:3 * num_layers]
-        self.inputs['interpolation_index'] = flat_inputs[3 * num_layers:4 * num_layers]
-        self.inputs['features'] = flat_inputs[4 * num_layers]
-        self.inputs['labels'] = flat_inputs[4 * num_layers + 1]
-        self.inputs['input_indexs'] = flat_inputs[4 * num_layers + 2]
-        self.inputs['cloud_indexs'] = flat_inputs[4 * num_layers + 3]
-        
-        self.labels = self.inputs['labels']
-        self.class_weights = DataProcessing.get_class_weights(dataset.name)
-        self.log_file = open('log_train_' + dataset.name + str(dataset.val_split) + '.txt', 'a')
-        
+        # weights
+        self.class_weights = DataProcessing.get_class_weights(dataset_name)
+
         # net
-        self.fc_0 = net_utils.Conv1d(3, 8, kernel_size=1, bn=True)
+        self.fc_0 = nn.Conv1d(3, 8, kernel_size=1, stride=1, bias=False)
+        self.bn_0 = nn.BatchNorm1d(8, 1e-6, 0.99)
+        self.activate_0 = nn.LeakyReLU(negative_slope=0.2, inplace=True)
         dimension_in = 8
         self.dilated_res_block = nn.ModuleList()
         for i in range(self.config.num_layers):
@@ -140,7 +149,7 @@ class RandLANET(nn.Module):
             dimension_in = 2 * dimension_out
         
         dimension_out = dimension_in
-        self.decoder_0 = net_utils.Conv2d(dimension_in, dimension_out, kernel_size=(1, 1), bn=True)
+        self.decoder_0 = SharedMLP([dimension_in, dimension_out], bn=True)
         
         self.decoder_blocks = nn.ModuleList()
         for j in range(self.config.num_layers):
@@ -150,12 +159,12 @@ class RandLANET(nn.Module):
             else:
                 dimension_in = 4 * self.config.dimension_out[-4]
                 dimension_out = 2 * self.config.dimension_out[-4]
-            self.decoder_blocks.append(net_utils.Conv2d(dimension_in, dimension_out, kernel_size=(1, 1), bn=True))
+            self.decoder_blocks.append(SharedMLP([dimension_in, dimension_out], bn=True))
             
-        self.fc_1 = net_utils.Conv2d(dimension_out, 64, kernel_size=(1, 1), bn=True)
-        self.fc_2 = net_utils.Conv2d(64, 32, kernel_size=(1, 1), bn=True)
+        self.fc_1 = SharedMLP([dimension_out, 64], bn=True)
+        self.fc_2 = SharedMLP([64, 32], bn=True)
         self.dropout = nn.Dropout(0.5)
-        self.fc_3 = net_utils.Conv2d(32, self.config.num_classes, kernel_size=(1, 1), bn=False, activation=None)
+        self.fc_3 = SharedMLP([32, self.config.num_classes], bn=False, activation=False)
 
     def random_sample(self, feature, pool_index):
         feature = feature.unsqueeze(3)
@@ -183,7 +192,9 @@ class RandLANET(nn.Module):
     def forward(self, input):
         features = input['features']
         features = self.fc_0(features)
-        features = features.unsqueeze(3)
+        features = self.bn_0(features)
+        features = self.activate_0(features)
+        features = features.unsqueeze(dim=3)
 
         features_encoder_list = []
         for i in range(self.config.num_layers):
@@ -232,5 +243,15 @@ class RandLANET(nn.Module):
         valid_logits = logits[valid_index, :]
         valid_labels_init = labels[valid_index]
 
-        
+        reducing_list = torch.range(0, config.num_classes).long().cuda()
+        inserted_value = torch.zeros((1,)).long().cuda()
+
+        for ignore in config.ignored_label_index:
+            reducing_list = torch.cat([reducing_list[:ignore], inserted_value, reducing_list[ignore:]], 0)
+        valid_labels = torch.gather(reducing_list, 0, config.class_weights)
+        loss = get_loss(valid_logits, valid_labels, config.class_weights)
+
+        input['valid_logits'], input['valid_labels'] = valid_logits, valid_labels
+        input['loss'] = loss
+        return loss, input
 
