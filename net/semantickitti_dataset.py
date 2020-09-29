@@ -24,35 +24,34 @@ class SemanticKITTI(torch_data.Dataset):
         self.name = 'SemanticKITTI'
         self.dataset_path = os.path.join(root_dir, 'data/semantickitti/dataset/sequences_0.06')
         self.label_to_names = {0: 'unlabeled',
-                                1: 'car',
-                                2: 'bicycle',
-                                3: 'motorcycle',
-                                4: 'truck',
-                                5: 'other-vehicle',
-                                6: 'person',
-                                7: 'bicyclist',
-                                8: 'motorcyclist',
-                                9: 'road',
-                                10: 'parking',
-                                11: 'sidewalk',
-                                12: 'other-ground',
-                                13: 'building',
-                                14: 'fence',
-                                15: 'vegetation',
-                                16: 'trunk',
-                                17: 'terrain',
-                                18: 'pole',
-                                19: 'traffic-sign'}
-
+                               1: 'car',
+                               2: 'bicycle',
+                               3: 'motorcycle',
+                               4: 'truck',
+                               5: 'other-vehicle',
+                               6: 'person',
+                               7: 'bicyclist',
+                               8: 'motorcyclist',
+                               9: 'road',
+                               10: 'parking',
+                               11: 'sidewalk',
+                               12: 'other-ground',
+                               13: 'building',
+                               14: 'fence',
+                               15: 'vegetation',
+                               16: 'trunk',
+                               17: 'terrain',
+                               18: 'pole',
+                               19: 'traffic-sign'}
         self.num_classes = len(self.label_to_names)
         self.label_values = np.sort([k for k, v in self.label_to_names.items()])
         self.label_to_index = {l: i for i, l in enumerate(self.label_values)}
         self.ignored_labels = np.sort([0])
-        self.seq_list = np.sort(os.listdir(self.dataset_path))
+        self.sequence_list = np.sort(os.listdir(self.dataset_path))
 
         if mode == 'test':
             self.test_scan_number = str(test_id)
-        
+
         self.mode = mode
         train_list, val_list, test_list = DataProcessing.get_file_list(self.dataset_path, str(test_id))
         if mode == 'training':
@@ -66,7 +65,6 @@ class SemanticKITTI(torch_data.Dataset):
 
         self.possibility = []
         self.min_possibility = []
-
         if mode == 'test':
             self.path_list = self.data_list
             for test_file_name in self.path_list:
@@ -74,9 +72,9 @@ class SemanticKITTI(torch_data.Dataset):
                 self.possibility += [np.random.rand(points.shape[0]) * 1e-3]
                 self.min_possibility += [float(np.min(self.possibility[-1]))]
 
-        Config_SemanticKITTI.ignored_label_inds = [self.label_to_index[ign_label] for ign_label in self.ignored_labels]
+        Config_SemanticKITTI.ignored_label_index = [self.label_to_index[ign_label] for ign_label in self.ignored_labels]
         Config_SemanticKITTI.class_weights = DataProcessing.get_class_weights('SemanticKITTI')
-    
+
     def __len__(self):
         return len(self.data_list)
 
@@ -85,14 +83,12 @@ class SemanticKITTI(torch_data.Dataset):
         return selected_pointcloud, selected_labels, selected_index, cloud_index
 
     def spatially_regular_gen(self, item):
-        # Generator loop
         if self.mode != 'test':
             cloud_index = item
             pointcloud_path = self.data_list[cloud_index]
             pointcloud, tree, labels = self.get_data(pointcloud_path)
             pick_index = np.random.choice(len(pointcloud), 1)
             selected_pointcloud, selected_labels, selected_index = self.crop_pointcloud(pointcloud, labels, tree, pick_index)
-        
         else:
             cloud_index = int(np.argmin(self.min_possibility))
             pick_index = np.argmin(self.possibility[cloud_index])
@@ -112,7 +108,7 @@ class SemanticKITTI(torch_data.Dataset):
         seq_id = file_path.split('/')[-3]
         frame_id = file_path.split('/')[-1][:-4]
         kd_tree_path = os.path.join(self.dataset_path, seq_id, 'KDTree', frame_id + '.pkl')
-        
+
         with open(kd_tree_path, 'rb') as f:
             search_tree = pickle.load(f)
         points = np.array(search_tree.data, copy=False)
@@ -127,7 +123,8 @@ class SemanticKITTI(torch_data.Dataset):
 
     def crop_pointcloud(self, points, labels, search_tree, pick_index):
         center_point = points[pick_index, :].reshape(1, -1)
-        select_index = DataProcessing.shuffle_index(search_tree.query(center_point, k=Config_SemanticKITTI.num_points)[1][0])
+        select_index = search_tree.query(center_point, k=Config_SemanticKITTI.num_points)[1][0]
+        select_index = DataProcessing.shuffle_index(select_index)
         select_points = points[select_index]
         select_labels = labels[select_index]
 
@@ -140,26 +137,25 @@ class SemanticKITTI(torch_data.Dataset):
         input_pools = []
         input_up_samples = []
 
-        for i in range(Config_SemanticKITTI.number_layers):
+        for i in range(Config_SemanticKITTI.num_layers):
             neighbour_index = DataProcessing.knn_search(batch_pointcloud, batch_pointcloud, Config_SemanticKITTI.knn)
-            sub_points = batch_pointcloud[:, : batch_pointcloud.shape[1] // Config_SemanticKITTI.sub_sampling_ratio[i], :]
-            pool_i = neighbour_index[:, : batch_pointcloud.shape[1] // Config_SemanticKITTI.sub_sampling_ratio[i], :]
+            sub_points = batch_pointcloud[:, :batch_pointcloud.shape[1] // Config_SemanticKITTI.sub_sampling_ratio[i], :]
+            pool_i = neighbour_index[:, :batch_pointcloud.shape[1] // Config_SemanticKITTI.sub_sampling_ratio[i], :]
             up_i = DataProcessing.knn_search(sub_points, batch_pointcloud, 1)
             input_points.append(batch_pointcloud)
             input_neighbours.append(neighbour_index)
             input_pools.append(pool_i)
             input_up_samples.append(up_i)
-            batch_pointcloud = sub_points
-    
+            batch_pc = sub_points
+
         input_list = input_points + input_neighbours + input_pools + input_up_samples
         input_list += [features, batch_label, batch_pointcloud_index, batch_cloud_index]
     
         return input_list
 
     def collate_fn(self, batch):
-        selected_pointcloud, selected_labels, selected_index, cloud_index = [], [], [], []
+        selected_pointcloud, selected_labels, selected_index, cloud_index = [],[],[],[]
         for i in range(len(batch)):
-            print(i)
             selected_pointcloud.append(batch[i][0])
             selected_labels.append(batch[i][1])
             selected_index.append(batch[i][2])
@@ -172,7 +168,7 @@ class SemanticKITTI(torch_data.Dataset):
 
         flat_inputs = self.tf_map(selected_pointcloud, selected_labels, selected_index, cloud_index)
 
-        num_layers = Config_SemanticKITTI.number_layers
+        num_layers = Config_SemanticKITTI.num_layers
         inputs = {}
 
         inputs['xyz'] = []

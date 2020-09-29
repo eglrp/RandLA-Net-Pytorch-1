@@ -2,7 +2,7 @@
 
 class Config_Semantic3D:
     knn = 16
-    number_layers = 5
+    num_layers = 5
     num_points = 65536
     num_classes = 8
     sub_grid_size = 0.06

@@ -2,7 +2,7 @@
 
 class Config_SemanticKITTI:
     knn = 16
-    number_layers = 4
+    num_layers = 4
     num_points = 4096 * 11
     num_classes = 19
     sub_grid_size = 0.06

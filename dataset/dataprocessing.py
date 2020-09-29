@@ -24,34 +24,32 @@ class DataProcessing:
 
     @staticmethod
     def load_pointcloud_semantic3d(filename):
-        pointcloud = pd.read_csv(
-            filename, header=None, delim_whitespace=True, dtype=np.float16)
-        pointcloud = pointcloud.values
+        pointcloud_pd = pd.read_csv(filename, header=None, delim_whitespace=True, dtype=np.float16)
+        pointcloud = pointcloud_pd.values
         return pointcloud
 
     @staticmethod
     def load_label_semantic3d(filename):
-        labels = pd.read_csv(filename, header=None,
-                             delim_whitespace=True, dtype=np.uint8)
-        labels = labels.values
-        return labels
+        label_pd = pd.read_csv(filename, header=None, delim_whitespace=True, dtype=np.uint8)
+        cloud_labels = label_pd.values
+        return cloud_labels
 
     @staticmethod
     def load_pointcloud_semantickitti(filepath):
-        data = np.fromfile(filepath, dtype=np.float32)
-        data = data.reshape((-1, 4))
-        pointcloud = data[:, 0:3]
-        return pointcloud
+        scan = np.fromfile(filepath, dtype=np.float32)
+        scan = scan.reshape((-1, 4))
+        points = scan[:, 0:3]  # get xyz
+        return points
 
     @staticmethod
     def load_label_semantickitti(filepath, remap_lut):
         label = np.fromfile(filepath, dtype=np.uint32)
         label = label.reshape((-1))
-        semnatic_label = label & 0xFFFF
-        instance_label = label >> 16
-        assert (semnatic_label + (instance_label << 16) == label).all()
-        semnatic_label = remap_lut[semnatic_label]
-        return semnatic_label.astype(np.int32)
+        sem_label = label & 0xFFFF  # semantic label in lower half
+        inst_label = label >> 16  # instance id in upper half
+        assert ((sem_label + (inst_label << 16) == label).all())
+        sem_label = remap_lut[sem_label]
+        return sem_label.astype(np.int32)
 
     @staticmethod
     def get_pointcloud_list_semantickitti(dataset_path):
@@ -77,54 +75,44 @@ class DataProcessing:
 
     @staticmethod
     def get_file_list(dataset_path, test_scan_num):
-        sequence_list = np.sort(os.listdir(dataset_path))
+        seq_list = np.sort(os.listdir(dataset_path))
 
         train_file_list = []
         test_file_list = []
         val_file_list = []
+        for seq_id in seq_list:
+            seq_path = os.path.join(dataset_path, seq_id)
+            pc_path = os.path.join(seq_path, 'velodyne')
+            if seq_id == '08':
+                val_file_list.append([os.path.join(pc_path, f) for f in np.sort(os.listdir(pc_path))])
+                if seq_id == test_scan_num:
+                    test_file_list.append([os.path.join(pc_path, f) for f in np.sort(os.listdir(pc_path))])
+            elif int(seq_id) >= 11 and seq_id == test_scan_num:
+                test_file_list.append([os.path.join(pc_path, f) for f in np.sort(os.listdir(pc_path))])
+            elif seq_id in ['00', '01', '02', '03', '04', '05', '06', '07', '09', '10']:
+                train_file_list.append([os.path.join(pc_path, f) for f in np.sort(os.listdir(pc_path))])
 
-        for sequence_id in sequence_list:
-            sequence_path = os.path.join(dataset_path, sequence_id)
-            pointcloud_path = os.path.join(sequence_path, 'velodyne')
-            # print(sequence_path)
-            # print(pointcloud_path)
-
-            if sequence_id == '08':
-                val_file_list.append([os.path.join(pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path))])
-                if sequence_id == test_scan_num:
-                    test_file_list.append([os.path.join(pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path))])
-            elif int(sequence_id) >= 11 and sequence_id == test_scan_num:
-                test_file_list.append([os.path.join(
-                    pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path))])
-            elif sequence_id in ['00', '01', '02', '03', '04', '05', '06', '07', '09', '10']:
-                train_file_list.append([os.path.join(
-                    pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path))])
-
-        train_file_list = np.concatenate(
-            [train_file for train_file in train_file_list], axis=0)
-        val_file_list = np.concatenate(
-            [val_file for val_file in val_file_list], axis=0)
+        train_file_list = np.concatenate(train_file_list, axis=0)
+        val_file_list = np.concatenate(val_file_list, axis=0)
         if test_scan_num != 'None':
-            test_file_list = np.concatenate(
-                [test_file for test_file in test_file_list], axis=0)
+            test_file_list = np.concatenate(test_file_list, axis=0)
         else:
             test_file_list = None
-
         return train_file_list, val_file_list, test_file_list
 
     @staticmethod
     def knn_search(ref, query, k):
-        # neighbours_idx = nearest_neighbors.knn_batch(ref, query, k, omp=True)
-        # return neighbours_idx.astype(np.int32)
+        neighbour_idx = nearest_neighbors.knn_batch(ref, query, k, omp=True)
+        return neighbour_idx.astype(np.int32)
 
-        assert torch.cuda.is_available()
-        knn = KNN(k, transpose_mode=True)
-        ref_cuda = torch.from_numpy(ref)
-        ref_cuda = ref_cuda.cuda()
-        query_cuda = torch.from_numpy(query)
-        query_cuda = query_cuda.cuda()
-        dist, index = knn(ref_cuda, query_cuda)
-        return index.cpu().numpy().astype(np.int32)
+        # assert torch.cuda.is_available()
+        # knn = KNN(k, transpose_mode=True)
+        # ref_cuda = torch.from_numpy(ref)
+        # ref_cuda = ref_cuda.cuda()
+        # query_cuda = torch.from_numpy(query)
+        # query_cuda = query_cuda.cuda()
+        # dist, index = knn(ref_cuda, query_cuda)
+        # return index.cpu().numpy().astype(np.int32)
 
     @staticmethod
     def data_augment(xyz, color, label, index, num_output):
@@ -139,9 +127,7 @@ class DataProcessing:
 
         index_duplicates = list(range(num_input)) + list(duplicates)
         index_augments = index[index_duplicates]
-
         label_augments = label[index_duplicates]
-
         return xyz_augments, color_augments, index_augments, label_augments
 
     @staticmethod

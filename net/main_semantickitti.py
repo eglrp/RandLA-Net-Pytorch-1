@@ -26,7 +26,7 @@ from net.RandLANet import RandLANET, IoUCalculator
 def mkdir_log(out_path):
     if not os.path.exists(out_path):
         os.mkdir(out_path)
-    f_out = open(os.path.join(out_path, 'log_train.txt'), 'a')
+    f_out = open(os.path.join(out_path, 'log_semantickitti_train.txt'), 'a')
     return f_out
 
 def log_out(out_str, f_out):
@@ -34,12 +34,12 @@ def log_out(out_str, f_out):
     f_out.flush()
     print(out_str)
 
-def worker_init(id):
-    np.random.seed(np.random.get_state()[1][0] + id)
+def worker_init(worker_id):
+    np.random.seed(np.random.get_state()[1][0] + worker_id)
     
-def adjust_lr_rate(optimizer, epoch, confg):
+def adjust_lr_rate(optimizer, epoch, config):
     lr = optimizer.param_groups[0]['lr']
-    lr = lr * confg.lr_decays[epoch]
+    lr = lr * config.lr_decays[epoch]
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
@@ -50,43 +50,43 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
     iou_calculator = IoUCalculator(config)
 
     for batch_index, batch_data in enumerate(train_dataloader):
-        print(batch_index)
-        print(batch_data)
-    #     for key in batch_data:
-    #         if type(batch_data[key]) is list:
-    #             for i in range(len(batch_data[key])):
-    #                 batch_data[key][i] = batch_data[key][i].cuda()
-    #         else:
-    #             batch_data[key] = batch_data[key].cuda()
+        # print("batch_data", batch_data['xyz'][0].size())
+        for key in batch_data:
+            if type(batch_data[key]) is list:
+                for i in range(len(batch_data[key])):
+                    print(batch_data[key][i].size())
+                    batch_data[key][i] = batch_data[key][i].cuda()
+            else:
+                batch_data[key] = batch_data[key].cuda()
                 
-    #     # forward
-    #     optimizer.zero_grad()
-    #     inputs = net(batch_data)
-    #     loss, inputs = RandLANET.compute_loss(inputs, config)
-    #     loss.backward()
-    #     optimizer.step()
+        # forward
+        optimizer.zero_grad()
+        inputs = net(batch_data)
+        loss, inputs = RandLANET.compute_loss(inputs, config)
+        loss.backward()
+        optimizer.step()
 
-    #     accuracy, inputs = RandLANET.compute_accuracy(inputs)
-    #     iou_calculator.add_data(inputs)
+        accuracy, inputs = RandLANET.compute_accuracy(inputs)
+        iou_calculator.add_data(inputs)
 
-    #     for key in inputs:
-    #         if 'loss' in key or 'accuracy' in key or 'iou' in key:
-    #             if key not in state_dict:
-    #                 state_dict[key] = 0
-    #             state_dict[key] += inputs[key].item()
+        for key in inputs:
+            if 'loss' in key or 'accuracy' in key or 'iou' in key:
+                if key not in state_dict:
+                    state_dict[key] = 0
+                state_dict[key] += inputs[key].item()
             
-    #     batch_interval = 10
-    #     if (batch_index + 1) % batch_interval == 0:
-    #         log_out(' ---- batch: %03d ----' % (batch_index + 1), f_out)
-    #         for key in sorted(state_dict.keys()):
-    #             log_out('mean %s: %f' % (key, state_dict[key] / batch_interval), f_out)
-    #             stat_dict[key] = 0
-    # mean_iou, iou_list = iou_calculator.compute_iou()
-    # log_out('mean IoU:{:.1f}'.format(mean_iou * 100), f_out)
-    # s = 'IoU:'
-    # for iou_tmp in iou_list:
-    #     s += '{:5.2f} '.format(100 * iou_tmp)
-    # log_out(s, f_out)
+        batch_interval = 10
+        if (batch_index + 1) % batch_interval == 0:
+            log_out(' ---- batch: %03d ----' % (batch_index + 1), f_out)
+            for key in sorted(state_dict.keys()):
+                log_out('mean %s: %f' % (key, state_dict[key] / batch_interval), f_out)
+                stat_dict[key] = 0
+    mean_iou, iou_list = iou_calculator.compute_iou()
+    log_out('mean IoU:{:.1f}'.format(mean_iou * 100), f_out)
+    s = 'IoU:'
+    for iou_tmp in iou_list:
+        s += '{:5.2f} '.format(100 * iou_tmp)
+    log_out(s, f_out)
 
 
 def evaluate_one_epoch(net, test_dataloader, config, f_out):
@@ -139,22 +139,22 @@ def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch
         np.random.seed()
         train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out)
 
-        # if epoch_count == 0 or epoch_count % 10 == 9:
-        #     log_out('**** EVAL EPOCH %03d START****' % (epoch), f_out)
-        #     evaluate_one_epoch(net, test_dataloader, config, f_out)
-        #     log_out('**** EVAL EPOCH %03d END****' % (epoch), f_out)
+        if epoch_count == 0 or epoch_count % 10 == 9:
+            log_out('**** EVAL EPOCH %03d START****' % (epoch), f_out)
+            evaluate_one_epoch(net, test_dataloader, config, f_out)
+            log_out('**** EVAL EPOCH %03d END****' % (epoch), f_out)
         
-        # save_dict = {
-        #     'epoch': epoch + 1,
-        #     'optimzer_state_dict': optimizer.state_dict(),
-        #     'loss': loss
-        # }
+        save_dict = {
+            'epoch': epoch + 1,
+            'optimzer_state_dict': optimizer.state_dict(),
+            'loss': loss
+        }
 
-        # try:
-        #     save_dict['model_state_dict'] = net.module.state_dict()
-        # except:
-        #     save_dict['model_state_dict'] = net.state_dict()
-        # torch.save(save_dict, os.path.join(flags.log_dir, 'checkpoint.tar'))
+        try:
+            save_dict['model_state_dict'] = net.module.state_dict()
+        except:
+            save_dict['model_state_dict'] = net.state_dict()
+        torch.save(save_dict, os.path.join(flags.log_dir, 'checkpoint.tar'))
 
 
 if __name__ == '__main__':
@@ -192,7 +192,7 @@ if __name__ == '__main__':
         net.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch']
-        log_out("-> loaded checkpoint %s (epoch: %d)" % (checkpoint_path, start_epoch))
+        log_out("-> loaded checkpoint %s (epoch: %d)" % (checkpoint_path, start_epoch), f_out)
     
     train(net, train_dataloader, test_dataloader, optimizer, Config_SemanticKITTI, start_epoch, FLAGS, f_out)
 

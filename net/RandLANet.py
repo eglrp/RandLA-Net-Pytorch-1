@@ -71,32 +71,32 @@ class BuildingBlock(nn.Module):
         feature_xyz = self.relative_point_position_encoding(xyz, neighbour_index)  # feature_xyz:(batch_size, number_points, neighbour, 10)
         feature_xyz = feature_xyz.permute((0, 3, 1, 2))  #feature_xyz:(batch_size, 10, number_points, neighbour)
         feature_xyz = self.BuildingBlock_mlp_1(feature_xyz)
-        feature_neighbour = self.gather_neigbour(feature.squeeze(-1).permute((0, 2, 1), neighbour_index)) # feature_neighbour:(batch_size,npoint,nsamples,channel)
+        feature_neighbour = self.gather_neighbour(feature.squeeze(-1).permute((0, 2, 1)), neighbour_index) # feature_neighbour:(batch_size,npoint,nsamples,channel)
         feature_neighbour = feature_neighbour.permute((0, 3, 1, 2)) #feature_neighbour:(batch_size, channel, number_points, neighbour)
         feature_concat = torch.cat([feature_neighbour, feature_xyz], dim=1)
         feature_pointcloud_aggregate = self.BuildingBlock_attentivepooling_1(feature_concat)
 
         feature_xyz = self.BuildingBlock_mlp_2(feature_xyz)
-        feature_neighbour = self.gather_neigbour(feature_pointcloud_aggregate.squeeze(-1).permute((0, 2, 1)), neighbour_index)
+        feature_neighbour = self.gather_neighbour(feature_pointcloud_aggregate.squeeze(-1).permute((0, 2, 1)), neighbour_index)
         feature_neighbour = feature_neighbour.permute((0, 3, 1, 2))
         feature_concat = torch.cat([feature_neighbour, feature_xyz], dim=1)
         feature_pointcloud_aggregate = self.BuildingBlock_attentivepooling_2(feature_concat)
         return feature_pointcloud_aggregate
 
     def relative_point_position_encoding(self, xyz, neighbour_index):
-        neighbour_xyz = self.gather_neigbour(xyz, neighbour_index)  # neighbour_xyz:(batch_size, number_points, neighbour, channel)
+        neighbour_xyz = self.gather_neighbour(xyz, neighbour_index)  # neighbour_xyz:(batch_size, number_points, neighbour, channel)
         xyz_tile = xyz.unsqueeze(2).repeat(1, 1, neighbour_index.shape[-1], 1) # xyz_tile:(batch_size, number_points, neighbour, channel)
         relative_xyz = xyz_tile - neighbour_xyz
         relative_distance = torch.sqrt(torch.sum(torch.pow(relative_xyz, 2), dim=-1, keepdims=True)) # relative_distance:(batch_size, number_points, neighbour, 1)
         relative_feature = torch.cat([relative_distance, relative_xyz, xyz_tile, neighbour_xyz], dim=-1)  # relative_feature:(batch_size, number_points, neighbour, 10)
         return relative_feature
 
-    def gather_neigbour(self, pointcloud, neighbour_index):
+    def gather_neighbour(self, pointcloud, neighbour_index):
         batch_size = pointcloud.shape[0]
         number_points = pointcloud.shape[1]
         channel = pointcloud.shape[2]
 
-        index_input = neighbour_index.reshape(batch_size, -1) # index_input:(batch_size, neighbours)
+        index_input = neighbour_index.reshape(batch_size, -1) # index_input:(batch_size, neighbour)
         index_input = index_input.unsqueeze(-1).repeat(1,1,pointcloud.shape[2]) # index_input:(batch_size, neighbour_index, channels)
         features = torch.gather(pointcloud, 1, index_input)
         features = features.reshape(batch_size, number_points, neighbour_index.shape[-1], channel)
@@ -138,7 +138,7 @@ class RandLANET(nn.Module):
         self.activate_0 = nn.LeakyReLU(negative_slope=0.2, inplace=True)
         dimension_in = 8
         self.dilated_res_block = nn.ModuleList()
-        for i in range(self.config.number_layers):
+        for i in range(self.config.num_layers):
             dimension_out = self.config.dimension_out[i]
             self.dilated_res_block.append(DilatedResBlock(dimension_in, dimension_out))
             dimension_in = 2 * dimension_out
@@ -147,7 +147,7 @@ class RandLANET(nn.Module):
         self.decoder_0 = SharedMLP([dimension_in, dimension_out], bn=True)
         
         self.decoder_blocks = nn.ModuleList()
-        for j in range(self.config.number_layers):
+        for j in range(self.config.num_layers):
             if j < 3:
                 dimension_in = dimension_out + self.config.dimension_out[-j - 2]
                 dimension_out = 2 * self.config.dimension_out[-j - 2]
@@ -162,7 +162,7 @@ class RandLANET(nn.Module):
         self.fc_3 = SharedMLP([32, self.config.num_classes], bn=False, activation=False)
 
     def random_sample(self, feature, pool_index):
-        feature = feature.unsqueeze(3)
+        feature = feature.unsqueeze(dim=3)
         num_neighbour = pool_index.shape[-1]
         dimension = feature.shape[1]
         batch_size = pool_index.shape[0]
@@ -186,14 +186,18 @@ class RandLANET(nn.Module):
 
     def forward(self, inputs):
         features = inputs['features']
+        print(features.shape)
         features = self.fc_0(features)
         features = self.bn_0(features)
         features = self.activate_0(features)
         features = features.unsqueeze(dim=3)
+        print(features.shape)
 
         features_encoder_list = []
         for i in range(self.config.num_layers):
             features_encoder_i = self.dilated_res_block[i](features, inputs['xyz'][i], inputs['neighbour_index'][i])
+            # print(features_encoder_i.shape)
+            # print(inputs['sub_index'][i].shape)
             features_sampled_i = self.random_sample(features_encoder_i, inputs['sub_index'][i])
             features = features_sampled_i
             
@@ -205,7 +209,7 @@ class RandLANET(nn.Module):
 
         features_decoder_list = []
         for j in range(self.config.num_layers):
-            features_interpolation_i = self.nearest_interpolation(features, inputs['interpolation_index'][-j - 1])
+            features_interpolation_i = self.nearest_interpolation(features, inputs['interplation_index'][-j - 1])
             features_decoder_i = self.decoder_blocks[j](torch.cat([features_encoder_list[-j - 2], features_interpolation_i], dim=1))
             features = features_decoder_i
             features_decoder_list.append(features_decoder_i)
