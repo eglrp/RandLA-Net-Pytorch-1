@@ -24,11 +24,6 @@ sys.path.append(results_dir)
 # import net.net_utils as net_utils
 from dataset.dataprocessing import DataProcessing
 
-def log_out(out_str, f_out):
-    f_out.write(out_str + '\n')
-    f_out.flush()
-    print(out_str)
-
 class SharedMLP(nn.Sequential):
     def __init__(self, args, bn, activation=True):
         super(SharedMLP, self).__init__()
@@ -127,12 +122,12 @@ class RandLANET(nn.Module):
     def __init__(self, dataset_name, config):
         super(RandLANET, self).__init__()
         self.config = config
-        if self.config.save:
-            if self.config.save_path is None:
-                self.save_path = time.strftime(results_dir + '/Log_%Y-%m-%d_%H-%M-%S', time.gmtime())
+        if self.config.saving:
+            if self.config.saving_path is None:
+                self.saving_path = time.strftime(results_dir + '/Log_%Y-%m-%d_%H-%M-%S', time.gmtime())
             else:
-                self.save_path = self.config.save_path
-            os.makedirs(self.save_path) if os.path.exists(self.save_path) else None
+                self.saving_path = self.config.saving_path
+            os.makedirs(self.saving_path) if os.path.exists(self.saving_path) else None
         
         # weights
         self.class_weights = DataProcessing.get_class_weights(dataset_name)
@@ -143,7 +138,7 @@ class RandLANET(nn.Module):
         self.activate_0 = nn.LeakyReLU(negative_slope=0.2, inplace=True)
         dimension_in = 8
         self.dilated_res_block = nn.ModuleList()
-        for i in range(self.config.num_layers):
+        for i in range(self.config.number_layers):
             dimension_out = self.config.dimension_out[i]
             self.dilated_res_block.append(DilatedResBlock(dimension_in, dimension_out))
             dimension_in = 2 * dimension_out
@@ -152,7 +147,7 @@ class RandLANET(nn.Module):
         self.decoder_0 = SharedMLP([dimension_in, dimension_out], bn=True)
         
         self.decoder_blocks = nn.ModuleList()
-        for j in range(self.config.num_layers):
+        for j in range(self.config.number_layers):
             if j < 3:
                 dimension_in = dimension_out + self.config.dimension_out[-j - 2]
                 dimension_out = 2 * self.config.dimension_out[-j - 2]
@@ -189,8 +184,8 @@ class RandLANET(nn.Module):
         interpolation_features = interpolation_features.unsequeeze(3)
         return interpolation_features
 
-    def forward(self, input):
-        features = input['features']
+    def forward(self, inputs):
+        features = inputs['features']
         features = self.fc_0(features)
         features = self.bn_0(features)
         features = self.activate_0(features)
@@ -198,8 +193,8 @@ class RandLANET(nn.Module):
 
         features_encoder_list = []
         for i in range(self.config.num_layers):
-            features_encoder_i = self.dilated_res_block[i](features, input['xyz'][i], input['neighbour_index'][i])
-            features_sampled_i = self.random_sample(features_encoder_i, input['sub_index'][i])
+            features_encoder_i = self.dilated_res_block[i](features, inputs['xyz'][i], inputs['neighbour_index'][i])
+            features_sampled_i = self.random_sample(features_encoder_i, inputs['sub_index'][i])
             features = features_sampled_i
             
             if i == 0:
@@ -210,7 +205,7 @@ class RandLANET(nn.Module):
 
         features_decoder_list = []
         for j in range(self.config.num_layers):
-            features_interpolation_i = self.nearest_interpolation(features, input['interpolation_index'][-j - 1])
+            features_interpolation_i = self.nearest_interpolation(features, inputs['interpolation_index'][-j - 1])
             features_decoder_i = self.decoder_blocks[j](torch.cat([features_encoder_list[-j - 2], features_interpolation_i], dim=1))
             features = features_decoder_i
             features_decoder_list.append(features_decoder_i)
@@ -221,8 +216,8 @@ class RandLANET(nn.Module):
         features = self.fc3(features)
         feature_out = features.sequeeze(3)
 
-        input['logits'] = feature_out
-        return input
+        inputs['logits'] = feature_out
+        return inputs
 
     def get_loss(self, logits, labels, pre_class_weights):
         class_weights = torch.from_numpy(pre_class_weights).float().cuda()
@@ -231,9 +226,9 @@ class RandLANET(nn.Module):
         output_loss = output_loss.sum()
         return output_loss
 
-    def compute_loss(self, input, config):
-        logits = input['logits'].transpose(1,2).reshape(-1, config.num_classes)
-        labels = input['labels'].reshape(-1)
+    def compute_loss(self, inputs, config):
+        logits = inputs['logits'].transpose(1,2).reshape(-1, config.num_classes)
+        labels = inputs['labels'].reshape(-1)
 
         ignored_bool = labels = 0
         for ignored_label in config.ignored_label_index:
@@ -251,7 +246,51 @@ class RandLANET(nn.Module):
         valid_labels = torch.gather(reducing_list, 0, config.class_weights)
         loss = get_loss(valid_logits, valid_labels, config.class_weights)
 
-        input['valid_logits'], input['valid_labels'] = valid_logits, valid_labels
-        input['loss'] = loss
-        return loss, input
+        inputs['valid_logits'], inputs['valid_labels'] = valid_logits, valid_labels
+        inputs['loss'] = loss
+        return loss, inputs
+    
+    def compute_accuracy(self, inputs):
+        logits = inputs['valid_logits']
+        labels = inputs['valid_labels']
+        logits = logits.max(dim=1)[1]
+        acc = (logits == labels).sum().float() / float(labels.shape[0])
+        inputs['accuracy'] = acc
+        return acc, inputs
+
+class IoUCalculator:
+    def __init__(self, config):
+        self.groundtruth_classes = [0 for _ in range(config.num_classes)]
+        self.positive_classes = [0 for _ in range(config.num_classes)]
+        self.truepositive_classes = [0 for _ in range(config.num_classes)]
+        self.config = config
+
+    def add_data(self, inputs):
+        logits = inputs['valid_logits']
+        labels = inputs['valid_labels']
+        predict = logits.max(dim=1)[1]
+        predict_valid = predict.detach().cpu().numpy()
+        labels_valid = labels.detach().cpu().numpy()
+        
+        val_total_correct = 0
+        val_total_seen = 0
+        correct = np.sum(predict_valid == labels_valid)
+        val_total_correct += correct
+        val_total_seen += len(labels_valid)
+
+        confidence_matrix = sklearn.metrics.confusion_matrix(labels_valid, predict_valid, np.arange(0, self.cfg.num_classes, 1))
+        self.gt_classes += np.sum(confidence_matrix, axis=1)
+        self.positive_classes += np.sum(confidence_matrix, axis=0)
+        self.true_positive_classes += np.diagonal(confidence_matrix)
+
+    def compute_iou(self):
+        iou_list = []
+        for n in range(0, self.config.num_classes, 1):
+            if float(self.groudtruth_classes[n] + self.positive_classes[n] - self.true_positive_classes[n]) != 0:
+                iou = self.true_positive_classes[n] / float(self.groudtruth_classes[n] + self.positive_classes[n] - self.true_positive_classes[n])
+                iou_list.append(iou)
+            else:
+                iou_list.append(0.0)
+        mean_iou = sum(iou_list) / float(self.cfg.num_classes)
+        return mean_iou, iou_list
 

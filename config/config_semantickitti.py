@@ -2,7 +2,7 @@
 
 class Config_SemanticKITTI:
     knn = 16
-    number_layers = 16
+    number_layers = 4
     num_points = 4096 * 11
     num_classes = 19
     sub_grid_size = 0.06
@@ -22,6 +22,6 @@ class Config_SemanticKITTI:
     learning_rate = 1e-2
     lr_decays = {i: 0.95 for i in range(0, 500)}
 
-    train_sum_dir = 'semantic_kitti_train_log'
+    train_sum_dir = 'train_log'
     saving = True
     saving_path = None

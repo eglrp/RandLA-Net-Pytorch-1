@@ -86,24 +86,29 @@ class DataProcessing:
         for sequence_id in sequence_list:
             sequence_path = os.path.join(dataset_path, sequence_id)
             pointcloud_path = os.path.join(sequence_path, 'velodyne')
+            # print(sequence_path)
+            # print(pointcloud_path)
 
             if sequence_id == '08':
-                val_file_list.append(os.path.join(pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path)))
+                val_file_list.append([os.path.join(pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path))])
                 if sequence_id == test_scan_num:
-                    test_file_list.append(os.path.join(pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path)))
+                    test_file_list.append([os.path.join(pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path))])
             elif int(sequence_id) >= 11 and sequence_id == test_scan_num:
-                test_file_list.append(os.path.join(
-                    pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path)))
+                test_file_list.append([os.path.join(
+                    pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path))])
             elif sequence_id in ['00', '01', '02', '03', '04', '05', '06', '07', '09', '10']:
-                train_file_list.append(os.path.join(
-                    pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path)))
+                train_file_list.append([os.path.join(
+                    pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path))])
 
         train_file_list = np.concatenate(
             [train_file for train_file in train_file_list], axis=0)
         val_file_list = np.concatenate(
             [val_file for val_file in val_file_list], axis=0)
-        test_file_list = np.concatenate(
-            [test_file for test_file in test_file_list], axis=0)
+        if test_scan_num != 'None':
+            test_file_list = np.concatenate(
+                [test_file for test_file in test_file_list], axis=0)
+        else:
+            test_file_list = None
 
         return train_file_list, val_file_list, test_file_list
 
