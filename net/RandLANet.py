@@ -108,8 +108,8 @@ class DilatedResBlock(nn.Module):
 
         self.DilatedResBlock_mlp1 = SharedMLP([channel_input, channel_output // 2], bn=True)
         self.lfa = BuildingBlock(channel_output)
-        self.DilatedResBlock_mlp2 = SharedMLP([channel_output, channel_output * 2], bn=True)
-        self.DilatedResBlock_mlp3 = SharedMLP([channel_input, channel_output * 2], bn=True)
+        self.DilatedResBlock_mlp2 = SharedMLP([channel_output, channel_output * 2], bn=True, activation=False)
+        self.DilatedResBlock_mlp3 = SharedMLP([channel_input, channel_output * 2], bn=True, activation=False)
         
     def forward(self, feature, xyz, neighbour_index):
         feature_pointcloud = self.DilatedResBlock_mlp1(feature)

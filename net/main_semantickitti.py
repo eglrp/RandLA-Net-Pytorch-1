@@ -45,7 +45,6 @@ def adjust_lr_rate(optimizer, epoch, config):
         param_group['lr'] = lr
 
 def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out, writer):
-    print(epoch_count)
     state_dict = {}
     adjust_lr_rate(optimizer, EPOCH_CNT, config)
     net.train()
@@ -195,6 +194,7 @@ if __name__ == '__main__':
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     net = RandLANET('SemanticKITTI', Config_SemanticKITTI)
+    print(net)
     net.to(device)
     if torch.cuda.device_count() > 1:
         log_out("Let's use multi GPUs!")
