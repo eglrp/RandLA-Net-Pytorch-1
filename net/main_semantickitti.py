@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optimizer
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(base_dir)
@@ -43,18 +44,17 @@ def adjust_lr_rate(optimizer, epoch, config):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out):
+def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out, writer):
+    print(epoch_count)
     state_dict = {}
-    adjust_lr_rate(optimizer, epoch_count, config)
+    adjust_lr_rate(optimizer, EPOCH_CNT, config)
     net.train()
     iou_calculator = IoUCalculator(config)
 
     for batch_index, batch_data in enumerate(train_dataloader):
-        # print("batch_data", batch_data['xyz'][0].size())
         for key in batch_data:
             if type(batch_data[key]) is list:
                 for i in range(len(batch_data[key])):
-                    print(batch_data[key][i].size())
                     batch_data[key][i] = batch_data[key][i].cuda()
             else:
                 batch_data[key] = batch_data[key].cuda()
@@ -62,11 +62,13 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
         # forward
         optimizer.zero_grad()
         inputs = net(batch_data)
-        loss, inputs = RandLANET.compute_loss(inputs, config)
+        loss, inputs = net.compute_loss(inputs, config)
+        writer.add_scalar('training loss', loss, epoch_count * len(train_dataloader) + batch_index)
         loss.backward()
         optimizer.step()
 
-        accuracy, inputs = RandLANET.compute_accuracy(inputs)
+        accuracy, inputs = net.compute_accuracy(inputs)
+        writer.add_scalar('training accuracy', accuracy, epoch_count * len(train_dataloader) + batch_index)
         iou_calculator.add_data(inputs)
 
         for key in inputs:
@@ -80,16 +82,19 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
             log_out(' ---- batch: %03d ----' % (batch_index + 1), f_out)
             for key in sorted(state_dict.keys()):
                 log_out('mean %s: %f' % (key, state_dict[key] / batch_interval), f_out)
-                stat_dict[key] = 0
+                writer.add_scalar('training mean %s loss'%(key), state_dict[key] / batch_interval, epoch_count * len(train_dataloader) + batch_index)
+                state_dict[key] = 0
     mean_iou, iou_list = iou_calculator.compute_iou()
+    writer.add_scalar('training mean iou', mean_iou, epoch_count * len(train_dataloader))
     log_out('mean IoU:{:.1f}'.format(mean_iou * 100), f_out)
     s = 'IoU:'
     for iou_tmp in iou_list:
         s += '{:5.2f} '.format(100 * iou_tmp)
     log_out(s, f_out)
+    writer.close()
 
 
-def evaluate_one_epoch(net, test_dataloader, config, f_out):
+def evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out):
     state_dict = {} 
     net.eval()
     iou_calculator = IoUCalculator(config)
@@ -106,8 +111,9 @@ def evaluate_one_epoch(net, test_dataloader, config, f_out):
             inputs = net(batch_data)
 
         loss, inputs = RandLANET.compute_loss(inputs, config)
-
+        writer.add_scalar('evaluate loss', loss, epoch_count * len(test_dataloader) + batch_index)
         accuracy, inputs = RandLANET.compute_accuracy(inputs)
+        writer.add_scalar('evaluate accuracy', accuracy, epoch_count * len(test_dataloader) + batch_index)
         iou_calculator.add_data(inputs)
 
         # Accumulate statistics and print out
@@ -122,26 +128,31 @@ def evaluate_one_epoch(net, test_dataloader, config, f_out):
             log_out(' ---- batch: %03d ----' % (batch_index + 1), f_out)
 
     for key in sorted(state_dict.keys()):
-        log_out('eval mean %s: %f'%(key, state_dict[key]/(float(batch_index+1))))
+        log_out('eval mean %s: %f' % (key, state_dict[key] / (float(batch_index + 1))))
+        writer.add_scalar('evaluate mean %s loss:'%(key), state_dict[key] / batch_interval, epoch_count * len(test_dataloader) + batch_index)
     mean_iou, iou_list = iou_calculator.compute_iou()
+    writer.add_scalar('evaluate mean iou', mean_iou, epoch_count * len(train_dataloader))
     log_out('mean IoU:{:.1f}'.format(mean_iou * 100), f_out)
     s = 'IoU:'
     for iou_tmp in iou_list:
         s += '{:5.2f} '.format(100 * iou_tmp)
     log_out(s, f_out)
+    writer.close()
     
-def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch, flags, f_out):
+def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch, flags, f_out, writer):
+    global EPOCH_CNT
     loss = 0
     for epoch in range(start_epoch, flags.max_epoch):
+        EPOCH_CNT = epoch
         epoch_count = epoch
         log_out('**** EPOCH %03d ****' % (epoch), f_out)
         log_out(str(datetime.datetime.now()), f_out)
         np.random.seed()
-        train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out)
+        train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out, writer)
 
-        if epoch_count == 0 or epoch_count % 10 == 9:
+        if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9:
             log_out('**** EVAL EPOCH %03d START****' % (epoch), f_out)
-            evaluate_one_epoch(net, test_dataloader, config, f_out)
+            evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out)
             log_out('**** EVAL EPOCH %03d END****' % (epoch), f_out)
         
         save_dict = {
@@ -155,9 +166,15 @@ def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch
         except:
             save_dict['model_state_dict'] = net.state_dict()
         torch.save(save_dict, os.path.join(flags.log_dir, 'checkpoint.tar'))
+        print("ok")
+
+        for i, (name, param) in enumerate(net.named_parameters()):
+            writer.add_histogram(name, param, 0)
+        writer.close()
 
 
 if __name__ == '__main__':
+    writer = SummaryWriter('output/tensorboard')
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint_path', default='output/checkpoint.tar', help='Model checkpoint path [default: None]')
     parser.add_argument('--log_dir', default='output', help='Dump dir to save model checkpoint [default: log]')
@@ -194,7 +211,7 @@ if __name__ == '__main__':
         start_epoch = checkpoint['epoch']
         log_out("-> loaded checkpoint %s (epoch: %d)" % (checkpoint_path, start_epoch), f_out)
     
-    train(net, train_dataloader, test_dataloader, optimizer, Config_SemanticKITTI, start_epoch, FLAGS, f_out)
+    train(net, train_dataloader, test_dataloader, optimizer, Config_SemanticKITTI, start_epoch, FLAGS, f_out, writer)
 
 
 
