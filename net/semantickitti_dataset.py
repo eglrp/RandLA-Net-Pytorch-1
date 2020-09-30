@@ -17,7 +17,7 @@ sys.path.append(base_dir)
 sys.path.append(root_dir)
 
 from dataset.dataprocessing import DataProcessing
-from config.config_semantickitti import Config_SemanticKITTI
+from config.config_semantickitti import ConfigSemanticKITTI
 
 class SemanticKITTI(torch_data.Dataset):
     def __init__(self, mode, test_id=None):
@@ -74,8 +74,8 @@ class SemanticKITTI(torch_data.Dataset):
                 self.possibility += [np.random.rand(points.shape[0]) * 1e-3]
                 self.min_possibility += [float(np.min(self.possibility[-1]))]
 
-        Config_SemanticKITTI.ignored_label_index = [self.label_to_idx[ign_label] for ign_label in self.ignored_labels]
-        Config_SemanticKITTI.class_weights = DataProcessing.get_class_weights('SemanticKITTI')
+        ConfigSemanticKITTI.ignored_label_inds = [self.label_to_idx[ign_label] for ign_label in self.ignored_labels]
+        ConfigSemanticKITTI.class_weights = DataProcessing.get_class_weights('SemanticKITTI')
 
 
 
@@ -115,6 +115,7 @@ class SemanticKITTI(torch_data.Dataset):
 
         return selected_pc.astype(np.float32), selected_labels.astype(np.int32), selected_idx.astype(np.int32), np.array([cloud_ind], dtype=np.int32)
 
+
     def get_data(self, file_path):
         seq_id = file_path.split('/')[-3]
         frame_id = file_path.split('/')[-1][:-4]
@@ -135,8 +136,8 @@ class SemanticKITTI(torch_data.Dataset):
     def crop_pc(points, labels, search_tree, pick_idx):
         # crop a fixed size point cloud for training
         center_point = points[pick_idx, :].reshape(1, -1)
-        select_idx = search_tree.query(center_point, k=Config_SemanticKITTI.num_points)[1][0]
-        select_idx = DataProcessing.shuffle_index(select_idx)
+        select_idx = search_tree.query(center_point, k=ConfigSemanticKITTI.num_points)[1][0]
+        select_idx = DataProcessing.shuffle_idx(select_idx)
         select_points = points[select_idx]
         select_labels = labels[select_idx]
         return select_points, select_labels, select_idx
@@ -148,10 +149,10 @@ class SemanticKITTI(torch_data.Dataset):
         input_pools = []
         input_up_samples = []
 
-        for i in range(Config_SemanticKITTI.num_layers):
-            neighbour_idx = DataProcessing.knn_search(batch_pc, batch_pc, Config_SemanticKITTI.knn)
-            sub_points = batch_pc[:, :batch_pc.shape[1] // Config_SemanticKITTI.sub_sampling_ratio[i], :]
-            pool_i = neighbour_idx[:, :batch_pc.shape[1] // Config_SemanticKITTI.sub_sampling_ratio[i], :]
+        for i in range(ConfigSemanticKITTI.num_layers):
+            neighbour_idx = DataProcessing.knn_search(batch_pc, batch_pc, ConfigSemanticKITTI.k_n)
+            sub_points = batch_pc[:, :batch_pc.shape[1] // ConfigSemanticKITTI.sub_sampling_ratio[i], :]
+            pool_i = neighbour_idx[:, :batch_pc.shape[1] // ConfigSemanticKITTI.sub_sampling_ratio[i], :]
             up_i = DataProcessing.knn_search(sub_points, batch_pc, 1)
             input_points.append(batch_pc)
             input_neighbors.append(neighbour_idx)
@@ -165,6 +166,7 @@ class SemanticKITTI(torch_data.Dataset):
         return input_list
 
     def collate_fn(self,batch):
+    
         selected_pc, selected_labels, selected_idx, cloud_ind = [],[],[],[]
         for i in range(len(batch)):
             selected_pc.append(batch[i][0])
@@ -179,22 +181,20 @@ class SemanticKITTI(torch_data.Dataset):
 
         flat_inputs = self.tf_map(selected_pc, selected_labels, selected_idx, cloud_ind)
 
-        num_layers = Config_SemanticKITTI.num_layers
+        num_layers = ConfigSemanticKITTI.num_layers
         inputs = {}
         inputs['xyz'] = []
         for tmp in flat_inputs[:num_layers]:
             inputs['xyz'].append(torch.from_numpy(tmp).float())
-        inputs['neighbour_index'] = []
+        inputs['neigh_idx'] = []
         for tmp in flat_inputs[num_layers: 2 * num_layers]:
-            inputs['neighbour_index'].append(torch.from_numpy(tmp).long())
-
-        inputs['sub_index'] = []
+            inputs['neigh_idx'].append(torch.from_numpy(tmp).long())
+        inputs['sub_idx'] = []
         for tmp in flat_inputs[2 * num_layers:3 * num_layers]:
-            inputs['sub_index'].append(torch.from_numpy(tmp).long())
-
-        inputs['interplation_index'] = []
+            inputs['sub_idx'].append(torch.from_numpy(tmp).long())
+        inputs['interp_idx'] = []
         for tmp in flat_inputs[3 * num_layers:4 * num_layers]:
-            inputs['interplation_index'].append(torch.from_numpy(tmp).long())
+            inputs['interp_idx'].append(torch.from_numpy(tmp).long())
         inputs['features'] = torch.from_numpy(flat_inputs[4 * num_layers]).transpose(1,2).float()
         inputs['labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 1]).long()
         inputs['input_inds'] = torch.from_numpy(flat_inputs[4 * num_layers + 2]).long()

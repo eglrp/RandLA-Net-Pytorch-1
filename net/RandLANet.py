@@ -21,7 +21,7 @@ sys.path.append(utils_dir)
 sys.path.append(dataset_dir)
 sys.path.append(results_dir)
 
-# import net.net_utils as net_utils
+import net.net_utils as net_utils
 from dataset.dataprocessing import DataProcessing
 
 class SharedMLP(nn.Sequential):
@@ -44,122 +44,115 @@ class SharedMLP(nn.Sequential):
                 )
 
 
-class AttentivePooling(nn.Module):
-    def __init__(self, channel_input, channel_output):
-        super(AttentivePooling, self).__init__()
-        self.AttentivePooling_fc = nn.Conv2d(channel_input, channel_input, (1, 1), bias=False)
-        self.AttentivePooling_mlp = SharedMLP([channel_input, channel_output], bn=True)
-    
+class Att_pooling(nn.Module):
+    def __init__(self, d_in, d_out):
+        super().__init__()
+        self.fc = nn.Conv2d(d_in, d_in, (1, 1), bias=False)
+        self.mlp = net_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=True)
+
     def forward(self, feature_set):
-        feature_set = self.AttentivePooling_fc(feature_set) # feature_set:(batch_size, num_points, num_neighbour, channels)
-        score = F.softmax(feature_set, dim=3) # sum(feature_set[batch_size][num_points][num_neighbour][i])=1
-        weighted_score = feature_set.contiguous() * score
-        weighted_score_sum = torch.sum(weighted_score, dim=3, keepdim=True)
-        feature = self.AttentivePooling_mlp(weighted_score_sum)
-        return feature
+
+        att_activation = self.fc(feature_set)
+        att_scores = F.softmax(att_activation, dim=3)
+        f_agg = feature_set * att_scores
+        f_agg = torch.sum(f_agg, dim=3, keepdim=True)
+        f_agg = self.mlp(f_agg)
+        return f_agg
 
 
-class BuildingBlock(nn.Module):
-    def __init__(self, channel_out):
-        super(BuildingBlock, self).__init__()
-        self.BuildingBlock_mlp_1 = SharedMLP([10, channel_out // 2], bn=True)
-        self.BuildingBlock_attentivepooling_1 = AttentivePooling(channel_out, channel_out // 2)
-        self.BuildingBlock_mlp_2 = SharedMLP([channel_out // 2, channel_out // 2], bn=True)
-        self.BuildingBlock_attentivepooling_2 = AttentivePooling(channel_out, channel_out)
+class Building_block(nn.Module):
+    def __init__(self, d_out):  #  d_in = d_out//2
+        super().__init__()
+        self.mlp1 = net_utils.Conv2d(10, d_out//2, kernel_size=(1,1), bn=True)
+        self.att_pooling_1 = Att_pooling(d_out, d_out//2)
 
-    def forward(self, xyz, feature, neighbour_index):
-        feature_xyz = self.relative_point_position_encoding(xyz, neighbour_index)  # feature_xyz:(batch_size, number_points, neighbour, 10)
-        feature_xyz = feature_xyz.permute((0, 3, 1, 2))  #feature_xyz:(batch_size, 10, number_points, neighbour)
-        feature_xyz = self.BuildingBlock_mlp_1(feature_xyz)
-        feature_neighbour = self.gather_neighbour(feature.squeeze(-1).permute((0, 2, 1)), neighbour_index) # feature_neighbour:(batch_size,npoint,nsamples,channel)
-        feature_neighbour = feature_neighbour.permute((0, 3, 1, 2)) #feature_neighbour:(batch_size, channel, number_points, neighbour)
-        feature_concat = torch.cat([feature_neighbour, feature_xyz], dim=1)
-        feature_pointcloud_aggregate = self.BuildingBlock_attentivepooling_1(feature_concat)
+        self.mlp2 = net_utils.Conv2d(d_out//2, d_out//2, kernel_size=(1, 1), bn=True)
+        self.att_pooling_2 = Att_pooling(d_out, d_out)
 
-        feature_xyz = self.BuildingBlock_mlp_2(feature_xyz)
-        feature_neighbour = self.gather_neighbour(feature_pointcloud_aggregate.squeeze(-1).permute((0, 2, 1)), neighbour_index)
-        feature_neighbour = feature_neighbour.permute((0, 3, 1, 2))
-        feature_concat = torch.cat([feature_neighbour, feature_xyz], dim=1)
-        feature_pointcloud_aggregate = self.BuildingBlock_attentivepooling_2(feature_concat)
-        return feature_pointcloud_aggregate
+    def forward(self, xyz, feature, neigh_idx):  # feature: Batch*channel*npoints*1
+        f_xyz = self.relative_pos_encoding(xyz, neigh_idx)  # batch*npoint*nsamples*10
+        f_xyz = f_xyz.permute((0, 3, 1, 2))  # batch*10*npoint*nsamples
+        f_xyz = self.mlp1(f_xyz)
+        f_neighbours = self.gather_neighbour(feature.squeeze(-1).permute((0, 2, 1)), neigh_idx)  # batch*npoint*nsamples*channel
+        f_neighbours = f_neighbours.permute((0, 3, 1, 2))  # batch*channel*npoint*nsamples
+        f_concat = torch.cat([f_neighbours, f_xyz], dim=1)
+        f_pc_agg = self.att_pooling_1(f_concat)  # Batch*channel*npoints*1
 
-    def relative_point_position_encoding(self, xyz, neighbour_index):
-        neighbour_xyz = self.gather_neighbour(xyz, neighbour_index)  # neighbour_xyz:(batch_size, number_points, neighbour, channel)
-        xyz_tile = xyz.unsqueeze(2).repeat(1, 1, neighbour_index.shape[-1], 1) # xyz_tile:(batch_size, number_points, neighbour, channel)
-        relative_xyz = xyz_tile - neighbour_xyz
-        relative_distance = torch.sqrt(torch.sum(torch.pow(relative_xyz, 2), dim=-1, keepdims=True)) # relative_distance:(batch_size, number_points, neighbour, 1)
-        relative_feature = torch.cat([relative_distance, relative_xyz, xyz_tile, neighbour_xyz], dim=-1)  # relative_feature:(batch_size, number_points, neighbour, 10)
+        f_xyz = self.mlp2(f_xyz)
+        f_neighbours = self.gather_neighbour(f_pc_agg.squeeze(-1).permute((0, 2, 1)), neigh_idx)  # batch*npoint*nsamples*channel
+        f_neighbours = f_neighbours.permute((0, 3, 1, 2))  # batch*channel*npoint*nsamples
+        f_concat = torch.cat([f_neighbours, f_xyz], dim=1)
+        f_pc_agg = self.att_pooling_2(f_concat)
+        return f_pc_agg
+
+    def relative_pos_encoding(self, xyz, neigh_idx):
+        neighbor_xyz = self.gather_neighbour(xyz, neigh_idx)  # batch*npoint*nsamples*3
+
+        xyz_tile = xyz.unsqueeze(2).repeat(1, 1, neigh_idx.shape[-1], 1)  # batch*npoint*nsamples*3
+        relative_xyz = xyz_tile - neighbor_xyz  # batch*npoint*nsamples*3
+        relative_dis = torch.sqrt(torch.sum(torch.pow(relative_xyz, 2), dim=-1, keepdim=True))  # batch*npoint*nsamples*1
+        relative_feature = torch.cat([relative_dis, relative_xyz, xyz_tile, neighbor_xyz], dim=-1)  # batch*npoint*nsamples*10
         return relative_feature
 
-    def gather_neighbour(self, pointcloud, neighbour_index):
-        batch_size = pointcloud.shape[0]
-        number_points = pointcloud.shape[1]
-        channel = pointcloud.shape[2]
-
-        index_input = neighbour_index.reshape(batch_size, -1) # index_input:(batch_size, neighbour)
-        index_input = index_input.unsqueeze(-1).repeat(1,1,pointcloud.shape[2]) # index_input:(batch_size, neighbour_index, channels)
-        features = torch.gather(pointcloud, 1, index_input)
-        features = features.reshape(batch_size, number_points, neighbour_index.shape[-1], channel)
+    def gather_neighbour(self, pc, neighbor_idx):  # pc: batch*npoint*channel
+        # gather the coordinates or features of neighboring points
+        batch_size = pc.shape[0]
+        num_points = pc.shape[1]
+        d = pc.shape[2]
+        index_input = neighbor_idx.reshape(batch_size, -1)
+        features = torch.gather(pc, 1, index_input.unsqueeze(-1).repeat(1, 1, pc.shape[2]))
+        features = features.reshape(batch_size, num_points, neighbor_idx.shape[-1], d)  # batch*npoint*nsamples*channel
         return features
 
-class DilatedResBlock(nn.Module):
-    def __init__(self, channel_input, channel_output):
-        super(DilatedResBlock, self).__init__()
+class Dilated_res_block(nn.Module):
+    def __init__(self, d_in, d_out):
+        super().__init__()
 
-        self.DilatedResBlock_mlp1 = SharedMLP([channel_input, channel_output // 2], bn=True)
-        self.lfa = BuildingBlock(channel_output)
-        self.DilatedResBlock_mlp2 = SharedMLP([channel_output, channel_output * 2], bn=True, activation=False)
-        self.DilatedResBlock_mlp3 = SharedMLP([channel_input, channel_output * 2], bn=True, activation=False)
-        
-    def forward(self, feature, xyz, neighbour_index):
-        feature_pointcloud = self.DilatedResBlock_mlp1(feature)
-        feature_pointcloud = self.lfa(xyz, feature_pointcloud, neighbour_index)
-        feature_pointcloud = self.DilatedResBlock_mlp2(feature_pointcloud)
-        feature_shortcut = self.DilatedResBlock_mlp3(feature)
-        return F.leaky_relu(feature_pointcloud + feature_shortcut, negative_slope=0.2)
+        self.mlp1 = net_utils.Conv2d(d_in, d_out//2, kernel_size=(1,1), bn=True)
+        self.lfa = Building_block(d_out)
+        self.mlp2 = net_utils.Conv2d(d_out, d_out*2, kernel_size=(1, 1), bn=True, activation=None)
+        self.shortcut = net_utils.Conv2d(d_in, d_out*2, kernel_size=(1,1), bn=True, activation=None)
+
+    def forward(self, feature, xyz, neigh_idx):
+        f_pc = self.mlp1(feature)  # Batch*channel*npoints*1
+        f_pc = self.lfa(xyz, f_pc, neigh_idx)  # Batch*d_out*npoints*1
+        f_pc = self.mlp2(f_pc)
+        shortcut = self.shortcut(feature)
+        return F.leaky_relu(f_pc+shortcut, negative_slope=0.2)
         
 class RandLANET(nn.Module):
     def __init__(self, dataset_name, config):
         super(RandLANET, self).__init__()
         self.config = config
-        if self.config.saving:
-            if self.config.saving_path is None:
-                self.saving_path = time.strftime(results_dir + '/Log_%Y-%m-%d_%H-%M-%S', time.gmtime())
-            else:
-                self.saving_path = self.config.saving_path
-            os.makedirs(self.saving_path) if os.path.exists(self.saving_path) else None
-        
-        # weights
         self.class_weights = DataProcessing.get_class_weights(dataset_name)
 
         # net
-        self.fc_0 = nn.Conv1d(3, 8, kernel_size=1, stride=1, bias=False)
-        self.bn_0 = nn.BatchNorm1d(8, 1e-6, 0.99)
-        self.activate_0 = nn.LeakyReLU(negative_slope=0.2, inplace=True)
-        dimension_in = 8
-        self.dilated_res_block = nn.ModuleList()
+        self.fc0 = net_utils.Conv1d(3, 8, kernel_size=1, bn=True)
+
+        self.dilated_res_blocks = nn.ModuleList()
+        d_in = 8
         for i in range(self.config.num_layers):
-            dimension_out = self.config.dimension_out[i]
-            self.dilated_res_block.append(DilatedResBlock(dimension_in, dimension_out))
-            dimension_in = 2 * dimension_out
-        
-        dimension_out = dimension_in
-        self.decoder_0 = SharedMLP([dimension_in, dimension_out], bn=True)
-        
+            d_out = self.config.d_out[i]
+            self.dilated_res_blocks.append(Dilated_res_block(d_in, d_out))
+            d_in = 2 * d_out
+
+        d_out = d_in
+        self.decoder_0 = net_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=True)
+
         self.decoder_blocks = nn.ModuleList()
         for j in range(self.config.num_layers):
             if j < 3:
-                dimension_in = dimension_out + 2* self.config.dimension_out[-j - 2]
-                dimension_out = 2 * self.config.dimension_out[-j - 2]
+                d_in = d_out + 2 * self.config.d_out[-j-2]
+                d_out = 2 * self.config.d_out[-j-2]
             else:
-                dimension_in = 4 * self.config.dimension_out[-4]
-                dimension_out = 2 * self.config.dimension_out[-4]
-            self.decoder_blocks.append(SharedMLP([dimension_in, dimension_out], bn=True))
-            
-        self.fc_1 = SharedMLP([dimension_out, 64], bn=True)
-        self.fc_2 = SharedMLP([64, 32], bn=True)
+                d_in = 4 * self.config.d_out[-4]
+                d_out = 2 * self.config.d_out[-4]
+            self.decoder_blocks.append(net_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=True))
+
+        self.fc1 = net_utils.Conv2d(d_out, 64, kernel_size=(1,1), bn=True)
+        self.fc2 = net_utils.Conv2d(64, 32, kernel_size=(1,1), bn=True)
         self.dropout = nn.Dropout(0.5)
-        self.fc_3 = SharedMLP([32, self.config.num_classes], bn=False, activation=False)
+        self.fc3 = net_utils.Conv2d(32, self.config.num_classes, kernel_size=(1,1), bn=False, activation=None)
 
     def random_sample(self, feature, pool_idx):
         """
@@ -192,45 +185,53 @@ class RandLANET(nn.Module):
         return interpolated_features
 
     def forward(self, end_points):
-        features = end_points['features']
-        features = self.fc_0(features)
-        features = self.bn_0(features)
-        features = self.activate_0(features)
-        features = features.unsqueeze(dim=3)
+    
+        features = end_points['features']  # Batch*channel*npoints
+        features = self.fc0(features)
 
+        features = features.unsqueeze(dim=3)  # Batch*channel*npoints*1
+
+        # ###########################Encoder############################
         f_encoder_list = []
         for i in range(self.config.num_layers):
-            f_encoder_i = self.dilated_res_block[i](features, end_points['xyz'][i], end_points['neighbour_index'][i])
-            f_sampled_i = self.random_sample(f_encoder_i, end_points['sub_index'][i])
+            f_encoder_i = self.dilated_res_blocks[i](features, end_points['xyz'][i], end_points['neigh_idx'][i])
+
+            f_sampled_i = self.random_sample(f_encoder_i, end_points['sub_idx'][i])
             features = f_sampled_i
             if i == 0:
                 f_encoder_list.append(f_encoder_i)
             f_encoder_list.append(f_sampled_i)
+        # ###########################Encoder############################
 
         features = self.decoder_0(f_encoder_list[-1])
 
+        # ###########################Decoder############################
         f_decoder_list = []
         for j in range(self.config.num_layers):
-            f_interp_i = self.nearest_interpolation(features, end_points['interplation_index'][-j - 1])
+            f_interp_i = self.nearest_interpolation(features, end_points['interp_idx'][-j - 1])
             f_decoder_i = self.decoder_blocks[j](torch.cat([f_encoder_list[-j - 2], f_interp_i], dim=1))
 
             features = f_decoder_i
             f_decoder_list.append(f_decoder_i)
-        
-        features = self.fc_1(features)
-        features = self.fc_2(features)
-        features = self.dropout(features)
-        features = self.fc_3(features)
-        feature_out = features.squeeze(dim=3)
+        # ###########################Decoder############################
 
-        end_points['logits'] = feature_out
+        features = self.fc1(features)
+        features = self.fc2(features)
+        features = self.dropout(features)
+        features = self.fc3(features)
+        f_out = features.squeeze(3)
+
+        end_points['logits'] = f_out
         return end_points
 
-    def get_loss(self, logits, labels, pre_class_weights):
-        class_weights = torch.from_numpy(pre_class_weights).float().cuda()
+    def get_loss(self, logits, labels, pre_cal_weights):
+        # calculate the weighted cross entropy according to the inverse frequency
+        class_weights = torch.from_numpy(pre_cal_weights).float().cuda()
+        # one_hot_labels = F.one_hot(labels, self.config.num_classes)
+
         criterion = nn.CrossEntropyLoss(weight=class_weights, reduction='none')
         output_loss = criterion(logits, labels)
-        output_loss = output_loss.sum()
+        output_loss = output_loss.mean()
         return output_loss
 
     def compute_loss(self, end_points, cfg):
@@ -242,7 +243,7 @@ class RandLANET(nn.Module):
 
         # Boolean mask of points that should be ignored
         ignored_bool = labels == 0
-        for ign_label in cfg.ignored_label_index:
+        for ign_label in cfg.ignored_label_inds:
             ignored_bool = ignored_bool | (labels == ign_label)
 
         # Collect logits and labels that are not ignored
@@ -253,7 +254,7 @@ class RandLANET(nn.Module):
         # Reduce label values in the range of logit shape
         reducing_list = torch.arange(0, cfg.num_classes).long().cuda()
         inserted_value = torch.zeros((1,)).long().cuda()
-        for ign_label in cfg.ignored_label_index:
+        for ign_label in cfg.ignored_label_inds:
             reducing_list = torch.cat([reducing_list[:ign_label], inserted_value, reducing_list[ign_label:]], 0)
         valid_labels = torch.gather(reducing_list, 0, valid_labels_init)
         loss = self.get_loss(valid_logits, valid_labels, cfg.class_weights)
@@ -261,44 +262,47 @@ class RandLANET(nn.Module):
         end_points['loss'] = loss
         return loss, end_points
     
-    def compute_accuracy(self, end_points):
+    def compute_acc(self, end_points):
+        
         logits = end_points['valid_logits']
         labels = end_points['valid_labels']
         logits = logits.max(dim=1)[1]
         acc = (logits == labels).sum().float() / float(labels.shape[0])
-        end_points['accuracy'] = acc
+        end_points['acc'] = acc
         return acc, end_points
 
+
 class IoUCalculator:
-    def __init__(self, config):
-        self.groundtruth_classes = [0 for _ in range(config.num_classes)]
-        self.positive_classes = [0 for _ in range(config.num_classes)]
-        self.true_positive_classes = [0 for _ in range(config.num_classes)]
-        self.config = config
+    def __init__(self, cfg):
+        self.gt_classes = [0 for _ in range(cfg.num_classes)]
+        self.positive_classes = [0 for _ in range(cfg.num_classes)]
+        self.true_positive_classes = [0 for _ in range(cfg.num_classes)]
+        self.cfg = cfg
 
     def add_data(self, end_points):
         logits = end_points['valid_logits']
         labels = end_points['valid_labels']
-        predict = logits.max(dim=1)[1]
-        predict_valid = predict.detach().cpu().numpy()
+        pred = logits.max(dim=1)[1]
+        pred_valid = pred.detach().cpu().numpy()
         labels_valid = labels.detach().cpu().numpy()
-        
+
         val_total_correct = 0
         val_total_seen = 0
-        correct = np.sum(predict_valid == labels_valid)
+
+        correct = np.sum(pred_valid == labels_valid)
         val_total_correct += correct
         val_total_seen += len(labels_valid)
 
-        confidence_matrix = confusion_matrix(labels_valid, predict_valid, np.arange(0, self.config.num_classes, 1))
-        self.groundtruth_classes += np.sum(confidence_matrix, axis=1)
-        self.positive_classes += np.sum(confidence_matrix, axis=0)
-        self.true_positive_classes += np.diagonal(confidence_matrix)
+        conf_matrix = confusion_matrix(labels_valid, pred_valid, np.arange(0, self.cfg.num_classes, 1))
+        self.gt_classes += np.sum(conf_matrix, axis=1)
+        self.positive_classes += np.sum(conf_matrix, axis=0)
+        self.true_positive_classes += np.diagonal(conf_matrix)
 
     def compute_iou(self):
         iou_list = []
-        for n in range(0, self.config.num_classes, 1):
-            if float(self.groudtruth_classes[n] + self.positive_classes[n] - self.true_positive_classes[n]) != 0:
-                iou = self.true_positive_classes[n] / float(self.groudtruth_classes[n] + self.positive_classes[n] - self.true_positive_classes[n])
+        for n in range(0, self.cfg.num_classes, 1):
+            if float(self.gt_classes[n] + self.positive_classes[n] - self.true_positive_classes[n]) != 0:
+                iou = self.true_positive_classes[n] / float(self.gt_classes[n] + self.positive_classes[n] - self.true_positive_classes[n])
                 iou_list.append(iou)
             else:
                 iou_list.append(0.0)
