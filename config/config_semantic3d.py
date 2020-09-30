@@ -1,26 +1,26 @@
 #! ~/.miniconda3/envs/pytorch/bin/python
 
-class Config_Semantic3D:
-    knn = 16
-    num_layers = 5
-    num_points = 65536
-    num_classes = 8
-    sub_grid_size = 0.06
+class ConfigSemantic3D:
+    k_n = 16  # KNN
+    num_layers = 5  # Number of layers
+    num_points = 65536  # Number of input points
+    num_classes = 8  # Number of valid classes
+    sub_grid_size = 0.06  # preprocess_parameter
 
-    batch_size = 4
-    val_batch_size = 16
-    train_steps = 500
-    val_steps = 100
+    batch_size = 4  # batch_size during training
+    val_batch_size = 16  # batch_size during validation and test
+    train_steps = 500  # Number of steps per epochs
+    val_steps = 100  # Number of validation steps per epoch
 
-    sub_sampling_ratio = [4, 4, 4, 4, 2]
-    dimension_out = [16, 64, 128, 256, 512]
+    sub_sampling_ratio = [4, 4, 4, 4, 2]  # sampling ratio of random sampling at each layer
+    d_out = [16, 64, 128, 256, 512]  # feature dimension
 
-    noise_init = 3.5
-    max_epochs = 100
-    learning_rate = 1e-2
-    lr_decays = {i: 0.95 for i in range(0, 500)}
+    noise_init = 3.5  # noise initial parameter
+    max_epoch = 100  # maximum epoch during training
+    learning_rate = 1e-2  # initial learning rate
+    lr_decays = {i: 0.95 for i in range(0, 500)}  # decay rate of learning rate
 
-    train_sum_dir = 'semantic3d_train_log'
+    train_sum_dir = 'train_log'
     saving = True
     saving_path = None
 
