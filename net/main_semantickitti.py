@@ -38,15 +38,16 @@ def log_out(out_str, f_out):
 def worker_init(worker_id):
     np.random.seed(np.random.get_state()[1][0] + worker_id)
     
-def adjust_learning_rate(optimizer, epoch, config):
+def adjust_learning_rate(optimizer, epoch, config, writer):
     lr = optimizer.param_groups[0]['lr']
     lr = lr * config.lr_decays[epoch]
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+    writer.add_scalar('learning rate', lr, epoch * config.batch_size)
 
 def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out, writer):
     stat_dict = {}  # collect statistics
-    adjust_learning_rate(optimizer, EPOCH_CNT, config)
+    adjust_learning_rate(optimizer, epoch_count, config, writer)
     net.train()  # set model to training mode
     iou_calc = IoUCalculator(config)
     for batch_idx, batch_data in enumerate(train_dataloader):
@@ -60,15 +61,21 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
         # Forward pass
         optimizer.zero_grad()
         end_points = net(batch_data)
-        # writer.add_graph(net,batch_data)
         loss, end_points = net.compute_loss(end_points, config)
-        writer.add_scalar('training loss', loss, (epoch_count * len(train_dataloader) + batch_idx)*config.batch_size)
+        writer.add_scalar('training loss', loss, (epoch_count * len(train_dataloader) + batch_idx) * config.batch_size)
+        
         loss.backward()
         optimizer.step()
 
         acc, end_points = net.compute_acc(end_points)
         writer.add_scalar('training accuracy', acc, (epoch_count * len(train_dataloader) + batch_idx)*config.batch_size)
         iou_calc.add_data(end_points)
+
+
+        # labels = end_points['labels']
+        # print(labels)
+        # valid_labels = end_points['valid_labels']
+        # print(valid_labels)
 
         for key in end_points:
             if 'loss' in key or 'acc' in key or 'iou' in key:
@@ -98,7 +105,7 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
     writer.close()
 
 
-def evaluate_one_epoch(net, test_dataloader, config, f_out):
+def evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out):
     stat_dict = {} # collect statistics
     net.eval() # set model to eval mode (for bn and dp)
     iou_calc = IoUCalculator(config)
@@ -115,9 +122,9 @@ def evaluate_one_epoch(net, test_dataloader, config, f_out):
             end_points = net(batch_data)
 
         loss, end_points = net.compute_loss(end_points, config)
-        writer.add_scalar('eval loss', loss, (EPOCH_CNT* len(test_dataloader) + batch_idx)*config.batch_size)
+        writer.add_scalar('eval loss', loss, (epoch_count* len(test_dataloader) + batch_idx)*config.batch_size)
         acc, end_points = net.compute_acc(end_points)
-        writer.add_scalar('eval acc', acc, (EPOCH_CNT* len(test_dataloader) + batch_idx)*config.batch_size)
+        writer.add_scalar('eval acc', acc, (epoch_count* len(test_dataloader) + batch_idx)*config.batch_size)
         iou_calc.add_data(end_points)
 
         # Accumulate statistics and print out
@@ -133,9 +140,9 @@ def evaluate_one_epoch(net, test_dataloader, config, f_out):
 
     for key in sorted(stat_dict.keys()):
         log_out('eval mean %s: %f' % (key, stat_dict[key] / (float(batch_idx + 1))), f_out)
-        writer.add_scalar('eval mean %s'% (key), stat_dict[key] / (float(batch_idx + 1)), (EPOCH_CNT * len(train_dataloader))*config.batch_size)
+        # writer.add_scalar('eval mean %s'% (key), stat_dict[key] / (float(batch_idx + 1)), (EPOCH_CNT * len(train_dataloader))*config.batch_size)
     mean_iou, iou_list = iou_calc.compute_iou()
-    writer.add_scalar('eval mean iou', mean_iou, (EPOCH_CNT * len(train_dataloader))*config.batch_size)
+    # writer.add_scalar('eval mean iou', mean_iou, (EPOCH_CNT * len(train_dataloader))*config.batch_size)
     log_out('mean IoU:{:.1f}'.format(mean_iou * 100), f_out)
     s = 'IoU:'
     for iou_tmp in iou_list:
@@ -145,18 +152,16 @@ def evaluate_one_epoch(net, test_dataloader, config, f_out):
     writer.close()
     
 def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch, flags, f_out, writer):
-    global EPOCH_CNT
     loss = 0
     for epoch in range(start_epoch, FLAGS.max_epoch):
-        EPOCH_CNT = epoch
         log_out('**** EPOCH %03d ****' % (epoch), f_out)
         log_out(str(datetime.datetime.now()), f_out)
         np.random.seed()
         train_one_epoch(net, train_dataloader, optimizer, epoch, config, f_out, writer)
 
-        if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9:
+        if epoch == 0 or epoch % 10 == 9:
             log_out('**** EVAL EPOCH %03d START****' % (epoch), f_out)
-            evaluate_one_epoch(net, test_dataloader, config, f_out)
+            evaluate_one_epoch(net, test_dataloader, epoch, config, f_out)
             log_out('**** EVAL EPOCH %03d END****' % (epoch), f_out)
         
         save_dict = {'epoch': epoch+1, # after training one epoch, the start_epoch should be epoch+1
@@ -168,13 +173,13 @@ def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch
             save_dict['model_state_dict'] = net.module.state_dict()
         except:
             save_dict['model_state_dict'] = net.state_dict()
-        torch.save(save_dict, os.path.join(flags.log_dir, 'checkpoint.tar'))
+        torch.save(save_dict, os.path.join(flags.log_dir, 'semantickitti_checkpoint.tar'))
 
 
 if __name__ == '__main__':
     writer = SummaryWriter('output/tensorboard')
     parser = argparse.ArgumentParser()
-    parser.add_argument('--checkpoint_path', default='output/checkpoint.tar', help='Model checkpoint path [default: None]')
+    parser.add_argument('--checkpoint_path', default='output/semantickitti_checkpoint.tar', help='Model checkpoint path [default: None]')
     parser.add_argument('--log_dir', default='output', help='Dump dir to save model checkpoint [default: log]')
     parser.add_argument('--max_epoch', type=int, default=400, help='Epoch to run [default: 180]')
     parser.add_argument('--batch_size', type=int, default=2, help='Batch Size during training [default: 8]')

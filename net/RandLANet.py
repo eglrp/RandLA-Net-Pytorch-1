@@ -184,19 +184,20 @@ class RandLANET(nn.Module):
         interpolated_features = interpolated_features.unsqueeze(3)  # batch*channel*npoints*1
         return interpolated_features
 
-    def forward(self, end_points):
-    
-        features = end_points['features']  # Batch*channel*npoints
+    def features(self, end_points):
+        features = end_points # Batch*channel*npoints
         features = self.fc0(features)
-
         features = features.unsqueeze(dim=3)  # Batch*channel*npoints*1
+        return features
 
+
+    def encoder_decoder(self, features, xyz, neigh_idx, sub_idx, interp_idx):
         # ###########################Encoder############################
         f_encoder_list = []
         for i in range(self.config.num_layers):
-            f_encoder_i = self.dilated_res_blocks[i](features, end_points['xyz'][i], end_points['neigh_idx'][i])
+            f_encoder_i = self.dilated_res_blocks[i](features, xyz[i], neigh_idx[i])
 
-            f_sampled_i = self.random_sample(f_encoder_i, end_points['sub_idx'][i])
+            f_sampled_i = self.random_sample(f_encoder_i, sub_idx[i])
             features = f_sampled_i
             if i == 0:
                 f_encoder_list.append(f_encoder_i)
@@ -208,7 +209,7 @@ class RandLANET(nn.Module):
         # ###########################Decoder############################
         f_decoder_list = []
         for j in range(self.config.num_layers):
-            f_interp_i = self.nearest_interpolation(features, end_points['interp_idx'][-j - 1])
+            f_interp_i = self.nearest_interpolation(features, interp_idx[-j - 1])
             f_decoder_i = self.decoder_blocks[j](torch.cat([f_encoder_list[-j - 2], f_interp_i], dim=1))
 
             features = f_decoder_i
@@ -220,6 +221,12 @@ class RandLANET(nn.Module):
         features = self.dropout(features)
         features = self.fc3(features)
         f_out = features.squeeze(3)
+        return f_out
+
+    def forward(self, end_points):
+    
+        features = self.features(end_points['features'])
+        f_out = self.encoder_decoder(features, end_points['xyz'], end_points['neigh_idx'], end_points['sub_idx'], end_points['interp_idx'])
 
         end_points['logits'] = f_out
         return end_points
