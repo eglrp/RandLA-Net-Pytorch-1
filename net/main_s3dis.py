@@ -22,7 +22,7 @@ sys.path.append(root_dir)
 
 from config.config_s3dis import ConfigS3DIS
 from net.s3dis_dataset import S3DIS
-from net.RandLANet import RandLANET, IoUCalculator
+from net.RandLANet import RandLANET, IoUCalculator, compute_acc, compute_loss
 
 def mkdir_log(out_path):
     if not os.path.exists(out_path):
@@ -61,12 +61,12 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
         optimizer.zero_grad()
         end_points = net(batch_data)
         # writer.add_graph(net,batch_data)
-        loss, end_points = net.compute_loss(end_points, config)
+        loss, end_points = compute_loss(end_points, config)
         writer.add_scalar('training loss', loss, (epoch_count * len(train_dataloader) + batch_idx)*config.batch_size)
         loss.backward()
         optimizer.step()
 
-        acc, end_points = net.compute_acc(end_points)
+        acc, end_points = compute_acc(end_points)
         writer.add_scalar('training accuracy', acc, (epoch_count * len(train_dataloader) + batch_idx)*config.batch_size)
         iou_calc.add_data(end_points)
 
@@ -181,8 +181,8 @@ if __name__ == '__main__':
 
     f_out = mkdir_log(FLAGS.log_dir)
 
-    train_dataset = S3DIS('training')
-    test_dataset = S3DIS('validation')
+    train_dataset = S3DIS(mode='training')
+    test_dataset = S3DIS(mode='validation')
     print('train dataset length:{}'.format(len(train_dataset)))
     print('test dataset length:{}'.format(len(test_dataset)))
     # train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=20, worker_init_fn=worker_init, collate_fn=train_dataset.collate_fn)

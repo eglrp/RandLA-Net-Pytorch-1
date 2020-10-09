@@ -27,7 +27,7 @@ class S3DIS(torch_data.Dataset):
     def __init__(self, mode, test_area_idx=None):
         self.name = 'S3DIS'
         self.mode = mode
-        self.path = os.path.join(root_dir, 'data/S3DIS')
+        self.path = os.path.join(root_dir, 'data/s3dis')
         self.label_to_names = {0: 'ceiling',
                                 1: 'floor',
                                 2: 'wall',
@@ -113,9 +113,12 @@ class S3DIS(torch_data.Dataset):
             for i, tree in enumerate(self.input_colors[self.mode]):
                 self.possibility[self.mode] += [np.random.rand(tree.data.shape[0]) * 1e-3]
                 self.min_possibility[self.mode] += [float(np.min(self.possibility[self.mode][-1]))]
-    
+
     def __len__(self):
-        pass
+        if self.mode == ' training':
+            return len(self.input_trees['training'])
+        elif self.mode == 'validation':
+            return len(self.input_trees['validation'])
 
     def __getitem__(self, item):
         queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx = self.spatially_regular_gen(item)
