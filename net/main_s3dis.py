@@ -114,9 +114,9 @@ def evaluate_one_epoch(net, test_dataloader, config, f_out):
         with torch.no_grad():
             end_points = net(batch_data)
 
-        loss, end_points = net.compute_loss(end_points, config)
+        loss, end_points = compute_loss(end_points, config)
         writer.add_scalar('eval loss', loss, (EPOCH_CNT* len(test_dataloader) + batch_idx)*config.batch_size)
-        acc, end_points = net.compute_acc(end_points)
+        acc, end_points = compute_acc(end_points)
         writer.add_scalar('eval acc', acc, (EPOCH_CNT* len(test_dataloader) + batch_idx)*config.batch_size)
         iou_calc.add_data(end_points)
 

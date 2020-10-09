@@ -22,7 +22,7 @@ sys.path.append(root_dir)
 
 from config.config_semantickitti import ConfigSemanticKITTI
 from net.semantickitti_dataset import SemanticKITTI
-from net.RandLANet import RandLANET, IoUCalculator
+from net.RandLANet import RandLANET, IoUCalculator, compute_loss, compute_acc
 
 def mkdir_log(out_path):
     if not os.path.exists(out_path):
@@ -61,13 +61,13 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
         # Forward pass
         optimizer.zero_grad()
         end_points = net(batch_data)
-        loss, end_points = net.compute_loss(end_points, config)
+        loss, end_points = compute_loss(end_points, config)
         writer.add_scalar('training loss', loss, (epoch_count * len(train_dataloader) + batch_idx) * config.batch_size)
         
         loss.backward()
         optimizer.step()
 
-        acc, end_points = net.compute_acc(end_points)
+        acc, end_points = compute_acc(end_points)
         writer.add_scalar('training accuracy', acc, (epoch_count * len(train_dataloader) + batch_idx)*config.batch_size)
         iou_calc.add_data(end_points)
 
@@ -121,9 +121,9 @@ def evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out):
         with torch.no_grad():
             end_points = net(batch_data)
 
-        loss, end_points = net.compute_loss(end_points, config)
+        loss, end_points = compute_loss(end_points, config)
         writer.add_scalar('eval loss', loss, (epoch_count* len(test_dataloader) + batch_idx)*config.batch_size)
-        acc, end_points = net.compute_acc(end_points)
+        acc, end_points = compute_acc(end_points)
         writer.add_scalar('eval acc', acc, (epoch_count* len(test_dataloader) + batch_idx)*config.batch_size)
         iou_calc.add_data(end_points)
 
