@@ -20,14 +20,14 @@ root_dir = os.path.dirname(base_dir)
 sys.path.append(base_dir)
 sys.path.append(root_dir)
 
-from config.config_semantickitti import ConfigSemanticKITTI
-from net.semantickitti_dataset import SemanticKITTI
+from config.config_s3dis import ConfigS3DIS
+from net.s3dis_dataset import S3DIS
 from net.RandLANet import RandLANET, IoUCalculator
 
 def mkdir_log(out_path):
     if not os.path.exists(out_path):
         os.mkdir(out_path)
-    f_out = open(os.path.join(out_path, 'log_semantickitti_train.txt'), 'a')
+    f_out = open(os.path.join(out_path, 'log_s3dis_train.txt'), 'a')
     return f_out
 
 def log_out(out_str, f_out):
@@ -37,7 +37,7 @@ def log_out(out_str, f_out):
 
 def worker_init(worker_id):
     np.random.seed(np.random.get_state()[1][0] + worker_id)
-    
+
 def adjust_learning_rate(optimizer, epoch, config):
     lr = optimizer.param_groups[0]['lr']
     lr = lr * config.lr_decays[epoch]
@@ -132,7 +132,7 @@ def evaluate_one_epoch(net, test_dataloader, config, f_out):
         writer.flush()
 
     for key in sorted(stat_dict.keys()):
-        log_out('eval mean %s: %f' % (key, stat_dict[key] / (float(batch_idx + 1))), f_out)
+        log_out('eval mean %s: %f' % (key, stat_dict[key] / (float(batch_idx + 1))))
         writer.add_scalar('eval mean %s'% (key), stat_dict[key] / (float(batch_idx + 1)), (EPOCH_CNT * len(train_dataloader))*config.batch_size)
     mean_iou, iou_list = iou_calc.compute_iou()
     writer.add_scalar('eval mean iou', mean_iou, (EPOCH_CNT * len(train_dataloader))*config.batch_size)
@@ -143,7 +143,7 @@ def evaluate_one_epoch(net, test_dataloader, config, f_out):
     log_out(s, f_out)
     writer.flush()
     writer.close()
-    
+
 def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch, flags, f_out, writer):
     global EPOCH_CNT
     loss = 0
@@ -170,7 +170,6 @@ def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch
             save_dict['model_state_dict'] = net.state_dict()
         torch.save(save_dict, os.path.join(flags.log_dir, 'checkpoint.tar'))
 
-
 if __name__ == '__main__':
     writer = SummaryWriter('output/tensorboard')
     parser = argparse.ArgumentParser()
@@ -182,35 +181,33 @@ if __name__ == '__main__':
 
     f_out = mkdir_log(FLAGS.log_dir)
 
-    train_dataset = SemanticKITTI('training')
-    test_dataset = SemanticKITTI('validation')
+    train_dataset = S3DIS('training')
+    test_dataset = S3DIS('validation')
     print('train dataset length:{}'.format(len(train_dataset)))
     print('test dataset length:{}'.format(len(test_dataset)))
-    train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=20, worker_init_fn=worker_init, collate_fn=train_dataset.collate_fn)
-    test_dataloader = DataLoader(test_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=20, worker_init_fn=worker_init, collate_fn=test_dataset.collate_fn)
-    print('train datalodaer length:{}'.format(len(train_dataloader)))
-    print('test dataloader length:{}'.format(len(test_dataloader)))
+    # train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=20, worker_init_fn=worker_init, collate_fn=train_dataset.collate_fn)
+    # test_dataloader = DataLoader(test_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=20, worker_init_fn=worker_init, collate_fn=test_dataset.collate_fn)
+    # print('train datalodaer length:{}'.format(len(train_dataloader)))
+    # print('test dataloader length:{}'.format(len(test_dataloader)))
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    net = RandLANET('SemanticKITTI', ConfigSemanticKITTI)
-    print(net)
-    net.to(device)
-    if torch.cuda.device_count() > 1:
-        log_out("Let's use multi GPUs!")
-        net = nn.DataParallel(net, device_ids=[0,1,2,3])
-    optimizer = optimizer.Adam(net.parameters(), lr=ConfigSemanticKITTI.learning_rate)
+    # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    # net = RandLANET('SemanticKITTI', ConfigS3DIS)
+    # print(net)
+    # net.to(device)
+    # if torch.cuda.device_count() > 1:
+    #     log_out("Let's use multi GPUs!")
+    #     net = nn.DataParallel(net, device_ids=[0,1,2,3])
+    # optimizer = optimizer.Adam(net.parameters(), lr=ConfigS3DIS.learning_rate)
 
-    it = -1
-    start_epoch = 0
-    checkpoint_path = FLAGS.checkpoint_path
-    if checkpoint_path is not None and os.path.isfile(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path)
-        net.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        start_epoch = checkpoint['epoch']
-        log_out("-> loaded checkpoint %s (epoch: %d)" % (checkpoint_path, start_epoch), f_out)
+    # it = -1
+    # start_epoch = 0
+    # checkpoint_path = FLAGS.checkpoint_path
+    # if checkpoint_path is not None and os.path.isfile(checkpoint_path):
+    #     checkpoint = torch.load(checkpoint_path)
+    #     net.load_state_dict(checkpoint['model_state_dict'])
+    #     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #     start_epoch = checkpoint['epoch']
+    #     log_out("-> loaded checkpoint %s (epoch: %d)" % (checkpoint_path, start_epoch), f_out)
     
-    train(net, train_dataloader, test_dataloader, optimizer, ConfigSemanticKITTI, start_epoch, FLAGS, f_out, writer)
-
-
+    # train(net, train_dataloader, test_dataloader, optimizer, ConfigS3DIS, start_epoch, FLAGS, f_out, writer)
 

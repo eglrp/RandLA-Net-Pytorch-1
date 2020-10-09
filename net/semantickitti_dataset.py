@@ -47,20 +47,18 @@ class SemanticKITTI(torch_data.Dataset):
         self.label_values = np.sort([k for k, v in self.label_to_names.items()])
         self.label_to_idx = {l: i for i, l in enumerate(self.label_values)}
         self.ignored_labels = np.sort([0])
-
         self.seq_list = np.sort(os.listdir(self.dataset_path))
 
         if mode == 'test':
             self.test_scan_number = str(test_id)
-
         self.mode = mode
-        train_list, val_list, test_list = DataProcessing.get_file_list(self.dataset_path, str(test_id))
+        self.train_list, self.val_list, self.test_list = DataProcessing.get_file_list(self.dataset_path, str(test_id))
         if mode == 'training':
-            self.data_list = train_list
+            self.data_list = self.train_list
         elif mode == 'validation':
-            self.data_list = val_list
+            self.data_list = self.val_list
         elif mode == 'test':
-            self.data_list = test_list
+            self.data_list = self.test_list
 
         # self.data_list = self.data_list[0:1]
         self.data_list = DataProcessing.shuffle_list(self.data_list)
