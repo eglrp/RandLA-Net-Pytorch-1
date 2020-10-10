@@ -59,7 +59,6 @@ class Att_pooling(nn.Module):
         f_agg = self.mlp(f_agg)
         return f_agg
 
-
 class Building_block(nn.Module):
     def __init__(self, d_out):  #  d_in = d_out//2
         super().__init__()
@@ -193,6 +192,7 @@ class RandLANET(nn.Module):
 
     def encoder_decoder(self, features, xyz, neigh_idx, sub_idx, interp_idx):
         # ###########################Encoder############################
+        # ok
         f_encoder_list = []
         for i in range(self.config.num_layers):
             f_encoder_i = self.dilated_res_blocks[i](features, xyz[i], neigh_idx[i])

@@ -1,7 +1,7 @@
 #! ~/.miniconda3/envs/pytorch/bin/python
 
 class ConfigSemanticKITTI:
-    channels=3
+    channels = 3
     k_n = 16  # KNN
     num_layers = 4  # Number of layers
     num_points = 4096 * 11  # Number of input points
@@ -22,6 +22,6 @@ class ConfigSemanticKITTI:
     learning_rate = 1e-2  # initial learning rate
     lr_decays = {i: 0.95 for i in range(0, 500)}  # decay rate of learning rate
 
-    train_sum_dir = 'train_log'
+    train_sum_dir = 'semantickitti_train_log'
     saving = True
     saving_path = None

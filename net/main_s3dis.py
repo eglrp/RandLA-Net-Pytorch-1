@@ -180,8 +180,8 @@ if __name__ == '__main__':
 
     f_out = mkdir_log(FLAGS.log_dir)
 
-    train_dataset = S3DIS(mode='training')
-    test_dataset = S3DIS(mode='validation')
+    train_dataset = S3DIS()
+    test_dataset = S3DIS()
     # print('train dataset length:{}'.format(len(train_dataset)))
     # print('test dataset length:{}'.format(len(test_dataset)))
     train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=1, worker_init_fn=worker_init, collate_fn=train_dataset.collate_fn)

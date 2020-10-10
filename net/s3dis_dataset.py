@@ -24,9 +24,8 @@ from config.config_s3dis import ConfigS3DIS
 
 class S3DIS(torch_data.Dataset):
 
-    def __init__(self, mode, test_area_idx=5):
+    def __init__(self,test_area_idx=5):
         self.name = 'S3DIS'
-        self.mode = mode
         self.path = os.path.join(root_dir, 'data/s3dis')
         self.label_to_names = {0: 'ceiling',
                                 1: 'floor',
@@ -41,11 +40,11 @@ class S3DIS(torch_data.Dataset):
                                 10: 'bookcase',
                                 11: 'board',
                                 12: 'clutter'}
-
         self.num_classes = len(self.label_to_names)
         self.label_values = np.sort([k for k, v in self.label_to_names.items()])
         self.label_to_idx = {l: i for i, l in enumerate(self.label_values)}
         self.ignored_labels = np.array([])
+
         self.val_split = 'Area_' + str(test_area_idx)
         self.all_files = glob.glob(os.path.join(self.path, 'original_ply', '*.ply'))
 
@@ -67,8 +66,10 @@ class S3DIS(torch_data.Dataset):
             cloud_name = file_path.split('/')[-1][:-4]
             if self.val_split in cloud_name:
                 cloud_split = 'validation'
+                self.split = 'validation'
             else:
                 cloud_split = 'training'
+                self.split = 'training'
 
             # Name of the input files
             kd_tree_file = os.path.join(tree_path, '{:s}_KDTree.pkl'.format(cloud_name))
@@ -105,15 +106,15 @@ class S3DIS(torch_data.Dataset):
                 self.val_labels += [labels]
                 print('{:s} done in {:.1f}s'.format(cloud_name, time.time() - t0))
         
-        for i, tree in enumerate(self.input_colors[self.mode]):
-            self.possibility[self.mode].append(np.random.rand(tree.data.shape[0]) * 1e-3)
-            self.min_possibility[self.mode].append(float(np.min(self.possibility[self.mode][-1])))
+        for i, tree in enumerate(self.input_colors[self.split]):
+            self.possibility[self.split].append(np.random.rand(tree.data.shape[0]) * 1e-3)  # (0,0.001)
+            self.min_possibility[self.split].append(float(np.min(self.possibility[self.split][-1])))
 
     def __len__(self):
-        if self.mode == 'training':
-            return len(self.input_trees['training'])
-        elif self.mode == 'validation':
-            return len(self.input_trees['validation'])
+        if self.split == 'training':
+            return len(self.input_trees['training']) * 240
+        elif self.split == 'validation':
+            return len(self.input_trees['validation']) * 240
 
     def __getitem__(self, item):
         queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx = self.spatially_regular_gen(item)
@@ -121,11 +122,11 @@ class S3DIS(torch_data.Dataset):
 
     def spatially_regular_gen(self, item):
         # Generator loop
-        cloud_idx = int(np.argmin(self.min_possibility[self.mode]))
+        cloud_idx = int(np.argmin(self.min_possibility[self.split]))
         # choose the point with the minimum of possibility in the cloud as query point
-        point_ind = np.argmin(self.possibility[self.mode][cloud_idx])
+        point_ind = np.argmin(self.possibility[self.split][cloud_idx])
         # Get all points within the cloud from tree structure
-        points = np.array(self.input_trees[self.mode][cloud_idx].data, copy=False)
+        points = np.array(self.input_trees[self.split][cloud_idx].data, copy=False)
         # Center point of input region
         center_point = points[point_ind, :].reshape(1, -1)
         # Add noise to the center point
@@ -134,24 +135,24 @@ class S3DIS(torch_data.Dataset):
         # Check if the number of points in the selected cloud is less than the predefined num_points
         if len(points) < ConfigS3DIS.num_points:
             # Query all points within the cloud
-            queried_idx = self.input_trees[self.mode][cloud_idx].query(pick_point, k=len(points))[1][0]
+            queried_idx = self.input_trees[self.split][cloud_idx].query(pick_point, k=len(points))[1][0]
         else:
             # Query the predefined number of points
-            queried_idx = self.input_trees[self.mode][cloud_idx].query(pick_point, k=ConfigS3DIS.num_points)[1][0]
+            queried_idx = self.input_trees[self.split][cloud_idx].query(pick_point, k=ConfigS3DIS.num_points)[1][0]
 
         # Shuffle index
         queried_idx = DataProcessing.shuffle_idx(queried_idx)
         # Get corresponding points and colors based on the index
         queried_pc_xyz = points[queried_idx]
         queried_pc_xyz = queried_pc_xyz - pick_point
-        queried_pc_colors = self.input_colors[self.mode][cloud_idx][queried_idx]
-        queried_pc_labels = self.input_labels[self.mode][cloud_idx][queried_idx]
+        queried_pc_colors = self.input_colors[self.split][cloud_idx][queried_idx]
+        queried_pc_labels = self.input_labels[self.split][cloud_idx][queried_idx]
 
         # Update the possibility of the selected points
         dists = np.sum(np.square((points[queried_idx] - pick_point).astype(np.float32)), axis=1)
         delta = np.square(1 - dists / np.max(dists))
-        self.possibility[self.mode][cloud_idx][queried_idx] += delta
-        self.min_possibility[self.mode][cloud_idx] = float(np.min(self.possibility[self.mode][cloud_idx]))
+        self.possibility[self.split][cloud_idx][queried_idx] += delta
+        self.min_possibility[self.split][cloud_idx] = float(np.min(self.possibility[self.split][cloud_idx]))
 
         # up_sampled with replacement
         if len(points) < ConfigS3DIS.num_points:
@@ -169,8 +170,11 @@ class S3DIS(torch_data.Dataset):
         input_up_samples = []
 
         for i in range(ConfigS3DIS.num_layers):
+            # print('queried_pc_xyz shape:',batch_xyz.shape) # (1, N, 3)
             neighbour_idx = DataProcessing.knn_search(batch_xyz, batch_xyz, ConfigS3DIS.k_n)
+            # print('neighbour_idx shape:', neighbour_idx.shape) # (1, N, 16)
             sub_points = batch_xyz[:, :batch_xyz.shape[1] // ConfigS3DIS.sub_sampling_ratio[i], :]
+            # print('sub_points shape:', sub_points.shape) # (1, N, 16)
             pool_i = neighbour_idx[:, :batch_xyz.shape[1] // ConfigS3DIS.sub_sampling_ratio[i], :]
             up_i = DataProcessing.knn_search(sub_points, batch_xyz, 1)
             input_points.append(batch_xyz)
@@ -181,10 +185,10 @@ class S3DIS(torch_data.Dataset):
 
         input_list = input_points + input_neighbors + input_pools + input_up_samples
         input_list += [batch_features, batch_labels, batch_pc_idx, batch_cloud_idx]
-
         return input_list
     
     def collate_fn(self, batch):
+        pass
         # todo
         queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx = [], [], [], [], []
         for i in range(len(batch)):
@@ -216,7 +220,7 @@ class S3DIS(torch_data.Dataset):
         inputs['interp_idx'] = []
         for tmp in flat_inputs[3 * num_layers:4 * num_layers]:
             inputs['interp_idx'].append(torch.from_numpy(tmp).long())
-        inputs['features'] = torch.from_numpy(flat_inputs[4 * num_layers]).transpose(1,2).float()
+        inputs['features'] = torch.from_numpy(flat_inputs[4 * num_layers]).transpose(1, 2).float()
         inputs['labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 1]).long()
         inputs['input_inds'] = torch.from_numpy(flat_inputs[4 * num_layers + 2]).long()
         inputs['cloud_inds'] = torch.from_numpy(flat_inputs[4 * num_layers + 3]).long()

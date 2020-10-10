@@ -1,7 +1,7 @@
 #! ~/.miniconda3/envs/pytorch/bin/python
 
 class ConfigS3DIS:
-    channels=6
+    channels = 6
     k_n = 16  # KNN
     num_layers = 5  # Number of layers
     num_points = 40960  # Number of input points
@@ -21,6 +21,6 @@ class ConfigS3DIS:
     learning_rate = 1e-2  # initial learning rate
     lr_decays = {i: 0.95 for i in range(0, 500)}  # decay rate of learning rate
 
-    train_sum_dir = 'train_log'
+    train_sum_dir = 's3dis_train_log'
     saving = True
     saving_path = None
