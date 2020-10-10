@@ -1,6 +1,7 @@
 #! ~/.miniconda3/envs/pytorch/bin/python
 
 class ConfigSemanticKITTI:
+    channels=3
     k_n = 16  # KNN
     num_layers = 4  # Number of layers
     num_points = 4096 * 11  # Number of input points

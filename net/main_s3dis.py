@@ -22,12 +22,12 @@ sys.path.append(root_dir)
 
 from config.config_s3dis import ConfigS3DIS
 from net.s3dis_dataset import S3DIS
-from net.RandLANet import RandLANET, IoUCalculator, compute_acc, compute_loss
+from net.RandLANet import RandLANET, IoUCalculator, compute_loss, compute_acc
 
 def mkdir_log(out_path):
     if not os.path.exists(out_path):
         os.mkdir(out_path)
-    f_out = open(os.path.join(out_path, 'log_s3dis_train.txt'), 'a')
+    f_out = open(os.path.join(out_path, 'log_semantickitti_train.txt'), 'a')
     return f_out
 
 def log_out(out_str, f_out):
@@ -37,16 +37,17 @@ def log_out(out_str, f_out):
 
 def worker_init(worker_id):
     np.random.seed(np.random.get_state()[1][0] + worker_id)
-
-def adjust_learning_rate(optimizer, epoch, config):
+    
+def adjust_learning_rate(optimizer, epoch, config, writer):
     lr = optimizer.param_groups[0]['lr']
     lr = lr * config.lr_decays[epoch]
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+    writer.add_scalar('learning rate', lr, epoch * config.batch_size)
 
 def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out, writer):
     stat_dict = {}  # collect statistics
-    adjust_learning_rate(optimizer, EPOCH_CNT, config)
+    adjust_learning_rate(optimizer, epoch_count, config, writer)
     net.train()  # set model to training mode
     iou_calc = IoUCalculator(config)
     for batch_idx, batch_data in enumerate(train_dataloader):
@@ -60,9 +61,9 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
         # Forward pass
         optimizer.zero_grad()
         end_points = net(batch_data)
-        # writer.add_graph(net,batch_data)
         loss, end_points = compute_loss(end_points, config)
-        writer.add_scalar('training loss', loss, (epoch_count * len(train_dataloader) + batch_idx)*config.batch_size)
+        writer.add_scalar('training loss', loss, (epoch_count * len(train_dataloader) + batch_idx) * config.batch_size)
+        
         loss.backward()
         optimizer.step()
 
@@ -98,7 +99,7 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
     writer.close()
 
 
-def evaluate_one_epoch(net, test_dataloader, config, f_out):
+def evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out):
     stat_dict = {} # collect statistics
     net.eval() # set model to eval mode (for bn and dp)
     iou_calc = IoUCalculator(config)
@@ -115,9 +116,9 @@ def evaluate_one_epoch(net, test_dataloader, config, f_out):
             end_points = net(batch_data)
 
         loss, end_points = compute_loss(end_points, config)
-        writer.add_scalar('eval loss', loss, (EPOCH_CNT* len(test_dataloader) + batch_idx)*config.batch_size)
+        writer.add_scalar('eval loss', loss, (epoch_count* len(test_dataloader) + batch_idx)*config.batch_size)
         acc, end_points = compute_acc(end_points)
-        writer.add_scalar('eval acc', acc, (EPOCH_CNT* len(test_dataloader) + batch_idx)*config.batch_size)
+        writer.add_scalar('eval acc', acc, (epoch_count* len(test_dataloader) + batch_idx)*config.batch_size)
         iou_calc.add_data(end_points)
 
         # Accumulate statistics and print out
@@ -132,10 +133,10 @@ def evaluate_one_epoch(net, test_dataloader, config, f_out):
         writer.flush()
 
     for key in sorted(stat_dict.keys()):
-        log_out('eval mean %s: %f' % (key, stat_dict[key] / (float(batch_idx + 1))))
-        writer.add_scalar('eval mean %s'% (key), stat_dict[key] / (float(batch_idx + 1)), (EPOCH_CNT * len(train_dataloader))*config.batch_size)
+        log_out('eval mean %s: %f' % (key, stat_dict[key] / (float(batch_idx + 1))), f_out)
+        # writer.add_scalar('eval mean %s'% (key), stat_dict[key] / (float(batch_idx + 1)), (EPOCH_CNT * len(train_dataloader))*config.batch_size)
     mean_iou, iou_list = iou_calc.compute_iou()
-    writer.add_scalar('eval mean iou', mean_iou, (EPOCH_CNT * len(train_dataloader))*config.batch_size)
+    # writer.add_scalar('eval mean iou', mean_iou, (EPOCH_CNT * len(train_dataloader))*config.batch_size)
     log_out('mean IoU:{:.1f}'.format(mean_iou * 100), f_out)
     s = 'IoU:'
     for iou_tmp in iou_list:
@@ -145,30 +146,28 @@ def evaluate_one_epoch(net, test_dataloader, config, f_out):
     writer.close()
 
 def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch, flags, f_out, writer):
-    global EPOCH_CNT
     loss = 0
     for epoch in range(start_epoch, FLAGS.max_epoch):
-        EPOCH_CNT = epoch
         log_out('**** EPOCH %03d ****' % (epoch), f_out)
         log_out(str(datetime.datetime.now()), f_out)
         np.random.seed()
         train_one_epoch(net, train_dataloader, optimizer, epoch, config, f_out, writer)
 
-        if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9:
-            log_out('**** EVAL EPOCH %03d START****' % (epoch), f_out)
-            evaluate_one_epoch(net, test_dataloader, config, f_out)
-            log_out('**** EVAL EPOCH %03d END****' % (epoch), f_out)
+        # if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9:
+        #     log_out('**** EVAL EPOCH %03d START****' % (epoch), f_out)
+        #     evaluate_one_epoch(net, test_dataloader, config, f_out)
+        #     log_out('**** EVAL EPOCH %03d END****' % (epoch), f_out)
         
-        save_dict = {'epoch': epoch+1, # after training one epoch, the start_epoch should be epoch+1
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': loss,
-                    }
+        # save_dict = {'epoch': epoch+1, # after training one epoch, the start_epoch should be epoch+1
+        #             'optimizer_state_dict': optimizer.state_dict(),
+        #             'loss': loss,
+        #             }
 
-        try:
-            save_dict['model_state_dict'] = net.module.state_dict()
-        except:
-            save_dict['model_state_dict'] = net.state_dict()
-        torch.save(save_dict, os.path.join(flags.log_dir, 'checkpoint.tar'))
+        # try:
+        #     save_dict['model_state_dict'] = net.module.state_dict()
+        # except:
+        #     save_dict['model_state_dict'] = net.state_dict()
+        # torch.save(save_dict, os.path.join(flags.log_dir, 'checkpoint.tar'))
 
 if __name__ == '__main__':
     writer = SummaryWriter('output/tensorboard')
@@ -176,38 +175,38 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_path', default='output/checkpoint.tar', help='Model checkpoint path [default: None]')
     parser.add_argument('--log_dir', default='output', help='Dump dir to save model checkpoint [default: log]')
     parser.add_argument('--max_epoch', type=int, default=400, help='Epoch to run [default: 180]')
-    parser.add_argument('--batch_size', type=int, default=2, help='Batch Size during training [default: 8]')
+    parser.add_argument('--batch_size', type=int, default=1, help='Batch Size during training [default: 8]')
     FLAGS = parser.parse_args()
 
     f_out = mkdir_log(FLAGS.log_dir)
 
     train_dataset = S3DIS(mode='training')
     test_dataset = S3DIS(mode='validation')
-    print('train dataset length:{}'.format(len(train_dataset)))
-    print('test dataset length:{}'.format(len(test_dataset)))
-    # train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=20, worker_init_fn=worker_init, collate_fn=train_dataset.collate_fn)
-    # test_dataloader = DataLoader(test_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=20, worker_init_fn=worker_init, collate_fn=test_dataset.collate_fn)
+    # print('train dataset length:{}'.format(len(train_dataset)))
+    # print('test dataset length:{}'.format(len(test_dataset)))
+    train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=1, worker_init_fn=worker_init, collate_fn=train_dataset.collate_fn)
+    test_dataloader = DataLoader(test_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=1, worker_init_fn=worker_init, collate_fn=test_dataset.collate_fn)
     # print('train datalodaer length:{}'.format(len(train_dataloader)))
     # print('test dataloader length:{}'.format(len(test_dataloader)))
 
-    # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    # net = RandLANET('SemanticKITTI', ConfigS3DIS)
-    # print(net)
-    # net.to(device)
-    # if torch.cuda.device_count() > 1:
-    #     log_out("Let's use multi GPUs!")
-    #     net = nn.DataParallel(net, device_ids=[0,1,2,3])
-    # optimizer = optimizer.Adam(net.parameters(), lr=ConfigS3DIS.learning_rate)
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    net = RandLANET('S3DIS', ConfigS3DIS)
+    print(net)
+    net.to(device)
+    if torch.cuda.device_count() > 1:
+        log_out("Let's use multi GPUs!", f_out)
+        net = nn.DataParallel(net, device_ids=[0,1,2,3])
+    optimizer = optimizer.Adam(net.parameters(), lr=ConfigS3DIS.learning_rate)
 
-    # it = -1
-    # start_epoch = 0
-    # checkpoint_path = FLAGS.checkpoint_path
-    # if checkpoint_path is not None and os.path.isfile(checkpoint_path):
-    #     checkpoint = torch.load(checkpoint_path)
-    #     net.load_state_dict(checkpoint['model_state_dict'])
-    #     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    #     start_epoch = checkpoint['epoch']
-    #     log_out("-> loaded checkpoint %s (epoch: %d)" % (checkpoint_path, start_epoch), f_out)
+    it = -1
+    start_epoch = 0
+    checkpoint_path = FLAGS.checkpoint_path
+    if checkpoint_path is not None and os.path.isfile(checkpoint_path):
+        checkpoint = torch.load(checkpoint_path)
+        net.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch']
+        log_out("-> loaded checkpoint %s (epoch: %d)" % (checkpoint_path, start_epoch), f_out)
     
-    # train(net, train_dataloader, test_dataloader, optimizer, ConfigS3DIS, start_epoch, FLAGS, f_out, writer)
+    train(net, train_dataloader, test_dataloader, optimizer, ConfigS3DIS, start_epoch, FLAGS, f_out, writer)
 

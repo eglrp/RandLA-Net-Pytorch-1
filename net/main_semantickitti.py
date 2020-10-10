@@ -201,7 +201,7 @@ if __name__ == '__main__':
     print(net)
     net.to(device)
     if torch.cuda.device_count() > 1:
-        log_out("Let's use multi GPUs!")
+        log_out("Let's use multi GPUs!", f_out)
         net = nn.DataParallel(net, device_ids=[0,1,2,3])
     optimizer = optimizer.Adam(net.parameters(), lr=ConfigSemanticKITTI.learning_rate)
 

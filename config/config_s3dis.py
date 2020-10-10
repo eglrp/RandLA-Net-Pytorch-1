@@ -1,6 +1,7 @@
 #! ~/.miniconda3/envs/pytorch/bin/python
 
 class ConfigS3DIS:
+    channels=6
     k_n = 16  # KNN
     num_layers = 5  # Number of layers
     num_points = 40960  # Number of input points

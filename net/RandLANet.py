@@ -127,7 +127,7 @@ class RandLANET(nn.Module):
         self.class_weights = DataProcessing.get_class_weights(dataset_name)
 
         # net
-        self.fc0 = net_utils.Conv1d(3, 8, kernel_size=1, bn=True)
+        self.fc0 = net_utils.Conv1d(config.channels, 8, kernel_size=1, bn=True)
 
         self.dilated_res_blocks = nn.ModuleList()
         d_in = 8
@@ -270,7 +270,6 @@ def compute_loss(end_points, cfg):
     return loss, end_points
     
 def compute_acc(end_points):
-    
     logits = end_points['valid_logits']
     labels = end_points['valid_labels']
     logits = logits.max(dim=1)[1]
