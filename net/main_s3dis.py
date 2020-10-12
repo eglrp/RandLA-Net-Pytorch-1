@@ -27,7 +27,7 @@ from net.RandLANet import RandLANET, IoUCalculator, compute_loss, compute_acc
 def mkdir_log(out_path):
     if not os.path.exists(out_path):
         os.mkdir(out_path)
-    f_out = open(os.path.join(out_path, 'log_semantickitti_train.txt'), 'a')
+    f_out = open(os.path.join(out_path, 'log_s3dis_train.txt'), 'a')
     return f_out
 
 def log_out(out_str, f_out):
@@ -153,26 +153,26 @@ def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch
         np.random.seed()
         train_one_epoch(net, train_dataloader, optimizer, epoch, config, f_out, writer)
 
-        # if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9:
-        #     log_out('**** EVAL EPOCH %03d START****' % (epoch), f_out)
-        #     evaluate_one_epoch(net, test_dataloader, config, f_out)
-        #     log_out('**** EVAL EPOCH %03d END****' % (epoch), f_out)
+        if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9:
+            log_out('**** EVAL EPOCH %03d START****' % (epoch), f_out)
+            evaluate_one_epoch(net, test_dataloader, config, f_out)
+            log_out('**** EVAL EPOCH %03d END****' % (epoch), f_out)
         
-        # save_dict = {'epoch': epoch+1, # after training one epoch, the start_epoch should be epoch+1
-        #             'optimizer_state_dict': optimizer.state_dict(),
-        #             'loss': loss,
-        #             }
+        save_dict = {'epoch': epoch+1, # after training one epoch, the start_epoch should be epoch+1
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': loss,
+                    }
 
-        # try:
-        #     save_dict['model_state_dict'] = net.module.state_dict()
-        # except:
-        #     save_dict['model_state_dict'] = net.state_dict()
-        # torch.save(save_dict, os.path.join(flags.log_dir, 'checkpoint.tar'))
+        try:
+            save_dict['model_state_dict'] = net.module.state_dict()
+        except:
+            save_dict['model_state_dict'] = net.state_dict()
+        torch.save(save_dict, os.path.join(flags.log_dir, 's3dis_checkpoint.tar'))
 
 if __name__ == '__main__':
-    writer = SummaryWriter('output/tensorboard')
+    writer = SummaryWriter('output/s3dis_tensorboard')
     parser = argparse.ArgumentParser()
-    parser.add_argument('--checkpoint_path', default='output/checkpoint.tar', help='Model checkpoint path [default: None]')
+    parser.add_argument('--checkpoint_path', default='output/s3dis_checkpoint.tar', help='Model checkpoint path [default: None]')
     parser.add_argument('--log_dir', default='output', help='Dump dir to save model checkpoint [default: log]')
     parser.add_argument('--max_epoch', type=int, default=400, help='Epoch to run [default: 180]')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch Size during training [default: 8]')

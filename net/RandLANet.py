@@ -51,8 +51,9 @@ class Att_pooling(nn.Module):
         self.mlp = net_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=True)
 
     def forward(self, feature_set):
-
+        # semantickitti: (16,8),(64,32),(128,64),(256,128)
         att_activation = self.fc(feature_set)
+        # semantickitti: (16,16),(64,64),(128,128),(256,256)
         att_scores = F.softmax(att_activation, dim=3)
         f_agg = feature_set * att_scores
         f_agg = torch.sum(f_agg, dim=3, keepdim=True)
@@ -62,8 +63,11 @@ class Att_pooling(nn.Module):
 class Building_block(nn.Module):
     def __init__(self, d_out):  #  d_in = d_out//2
         super().__init__()
-        self.mlp1 = net_utils.Conv2d(10, d_out//2, kernel_size=(1,1), bn=True)
-        self.att_pooling_1 = Att_pooling(d_out, d_out//2)
+        # semantickitti: 16,64,128,256
+        self.mlp1 = net_utils.Conv2d(10, d_out // 2, kernel_size=(1, 1), bn=True)
+        # semantickitti: (10,8), (10,32), (10,64), (10,128)
+        self.att_pooling_1 = Att_pooling(d_out, d_out // 2)
+        # semantickitti: (16,8),(64,32),(128,64),(256,128)
 
         self.mlp2 = net_utils.Conv2d(d_out//2, d_out//2, kernel_size=(1, 1), bn=True)
         self.att_pooling_2 = Att_pooling(d_out, d_out)
@@ -107,7 +111,9 @@ class Dilated_res_block(nn.Module):
     def __init__(self, d_in, d_out):
         super().__init__()
 
-        self.mlp1 = net_utils.Conv2d(d_in, d_out//2, kernel_size=(1,1), bn=True)
+        # semantickitti: (8,16), (32,64), (128,128), (256,256)
+        self.mlp1 = net_utils.Conv2d(d_in, d_out // 2, kernel_size=(1, 1), bn=True)
+        # semantickitti: (8,8), (32,32), (128,64), (256,128)
         self.lfa = Building_block(d_out)
         self.mlp2 = net_utils.Conv2d(d_out, d_out*2, kernel_size=(1, 1), bn=True, activation=None)
         self.shortcut = net_utils.Conv2d(d_in, d_out*2, kernel_size=(1,1), bn=True, activation=None)
@@ -131,8 +137,9 @@ class RandLANET(nn.Module):
         self.dilated_res_blocks = nn.ModuleList()
         d_in = 8
         for i in range(self.config.num_layers):
-            d_out = self.config.d_out[i]
+            d_out = self.config.d_out[i] # 16, 64, 128, 256
             self.dilated_res_blocks.append(Dilated_res_block(d_in, d_out))
+            # semantickitti: (8,16), (32,64), (128,128), (256,256)
             d_in = 2 * d_out
 
         d_out = d_in
@@ -141,11 +148,11 @@ class RandLANET(nn.Module):
         self.decoder_blocks = nn.ModuleList()
         for j in range(self.config.num_layers):
             if j < 3:
-                d_in = d_out + 2 * self.config.d_out[-j-2]
+                d_in = self.config.d_out[-j - 1] * 2 + 2 * self.config.d_out[-j - 2]
                 d_out = 2 * self.config.d_out[-j-2]
             else:
-                d_in = 4 * self.config.d_out[-4]
-                d_out = 2 * self.config.d_out[-4]
+                d_in = self.config.d_out[-j - 1] * 2 + 2 * self.config.d_out[0]
+                d_out = 2 * self.config.d_out[0]
             self.decoder_blocks.append(net_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=True))
 
         self.fc1 = net_utils.Conv2d(d_out, 64, kernel_size=(1,1), bn=True)
@@ -184,34 +191,45 @@ class RandLANET(nn.Module):
         return interpolated_features
 
     def features(self, end_points):
-        features = end_points # Batch*channel*npoints
-        features = self.fc0(features)
-        features = features.unsqueeze(dim=3)  # Batch*channel*npoints*1
+        features = end_points # (batch, 3, N)
+        features = self.fc0(features) # (batch, 8, N)
+        features = features.unsqueeze(dim=3)  # (batch, 8, N, 1)
         return features
 
 
     def encoder_decoder(self, features, xyz, neigh_idx, sub_idx, interp_idx):
+        # features.shape # (batch, 8, N, 1)
+        # xyz.shape # (batch,N,3)
+        # neigh_idx # (batch,N,16)
+        # sub_idx # (batch,N/4,16)
+        # interp_idx # (batch,N,1)
         # ###########################Encoder############################
         # ok
         f_encoder_list = []
         for i in range(self.config.num_layers):
             f_encoder_i = self.dilated_res_blocks[i](features, xyz[i], neigh_idx[i])
+            # f_encoder_i.shape: (batch, 2*d_out[0], N, 1), (batch, 2*d_out[1], N/4, 1), ...
+            # in tensorflow: (?,?,1,2*d_out[0]), (?,?,1,2*d_out[1]), ...
 
             f_sampled_i = self.random_sample(f_encoder_i, sub_idx[i])
+            # f_sampled_i.shape: (batch, 2*d_out[0], N/4, 1), (batch, 2*d_out[1], N/16, 1), ...
             features = f_sampled_i
             if i == 0:
                 f_encoder_list.append(f_encoder_i)
             f_encoder_list.append(f_sampled_i)
-        # ###########################Encoder############################
-
+            # print('0',f_encoder_i.shape)
+        ###########################Encoder############################
         features = self.decoder_0(f_encoder_list[-1])
+        # shape: (batch, 2*d_out[-1], N/128, 1)
 
         # ###########################Decoder############################
         f_decoder_list = []
         for j in range(self.config.num_layers):
             f_interp_i = self.nearest_interpolation(features, interp_idx[-j - 1])
+            # print('1', f_encoder_list[-j - 2].shape)
+            # print('2', f_interp_i.shape)
             f_decoder_i = self.decoder_blocks[j](torch.cat([f_encoder_list[-j - 2], f_interp_i], dim=1))
-
+            # print('3', f_decoder_i.shape)
             features = f_decoder_i
             f_decoder_list.append(f_decoder_i)
         # ###########################Decoder############################
@@ -225,7 +243,7 @@ class RandLANET(nn.Module):
 
     def forward(self, end_points):
     
-        features = self.features(end_points['features'])
+        features = self.features(end_points['features']) # (batch, 8, N, 1)
         f_out = self.encoder_decoder(features, end_points['xyz'], end_points['neigh_idx'], end_points['sub_idx'], end_points['interp_idx'])
 
         end_points['logits'] = f_out

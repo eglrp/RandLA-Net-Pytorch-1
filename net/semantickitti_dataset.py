@@ -164,38 +164,37 @@ class SemanticKITTI(torch_data.Dataset):
         return input_list
 
     def collate_fn(self,batch):
-    
         selected_pc, selected_labels, selected_idx, cloud_ind = [],[],[],[]
         for i in range(len(batch)):
-            selected_pc.append(batch[i][0])
-            selected_labels.append(batch[i][1])
-            selected_idx.append(batch[i][2])
-            cloud_ind.append(batch[i][3])
+            selected_pc.append(batch[i][0]) # (N,3)
+            selected_labels.append(batch[i][1]) # (N,)
+            selected_idx.append(batch[i][2]) # (N,)
+            cloud_ind.append(batch[i][3]) # (1,)
 
-        selected_pc = np.stack(selected_pc)
-        selected_labels = np.stack(selected_labels)
-        selected_idx = np.stack(selected_idx)
-        cloud_ind = np.stack(cloud_ind)
+        selected_pc = np.stack(selected_pc)  # (batch,N,3)
+        selected_labels = np.stack(selected_labels) # (batch,N)
+        selected_idx = np.stack(selected_idx) # (batch,N)
+        cloud_ind = np.stack(cloud_ind) # (batch,1)
 
         flat_inputs = self.tf_map(selected_pc, selected_labels, selected_idx, cloud_ind)
 
         num_layers = ConfigSemanticKITTI.num_layers
         inputs = {}
-        inputs['xyz'] = []
+        inputs['xyz'] = [] # (batch,N,3)
         for tmp in flat_inputs[:num_layers]:
             inputs['xyz'].append(torch.from_numpy(tmp).float())
-        inputs['neigh_idx'] = []
+        inputs['neigh_idx'] = [] # (batch,N,16)
         for tmp in flat_inputs[num_layers: 2 * num_layers]:
             inputs['neigh_idx'].append(torch.from_numpy(tmp).long())
-        inputs['sub_idx'] = []
-        for tmp in flat_inputs[2 * num_layers:3 * num_layers]:
+        inputs['sub_idx'] = []  # (batch,N/4,16)
+        for tmp in flat_inputs[2 * num_layers : 3 * num_layers]:
             inputs['sub_idx'].append(torch.from_numpy(tmp).long())
-        inputs['interp_idx'] = []
-        for tmp in flat_inputs[3 * num_layers:4 * num_layers]:
+        inputs['interp_idx'] = [] # (batch,N,1)
+        for tmp in flat_inputs[3 * num_layers : 4 * num_layers]:
             inputs['interp_idx'].append(torch.from_numpy(tmp).long())
-        inputs['features'] = torch.from_numpy(flat_inputs[4 * num_layers]).transpose(1,2).float()
-        inputs['labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 1]).long()
-        inputs['input_inds'] = torch.from_numpy(flat_inputs[4 * num_layers + 2]).long()
-        inputs['cloud_inds'] = torch.from_numpy(flat_inputs[4 * num_layers + 3]).long()
+        inputs['features'] = torch.from_numpy(flat_inputs[4 * num_layers]).transpose(1,2).float() # (batch, N, 3)->(batch, 3, N)
+        inputs['labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 1]).long() # (batch, N)
+        inputs['input_inds'] = torch.from_numpy(flat_inputs[4 * num_layers + 2]).long() # (batch, N)
+        inputs['cloud_inds'] = torch.from_numpy(flat_inputs[4 * num_layers + 3]).long() # (batch, 1)
 
         return inputs

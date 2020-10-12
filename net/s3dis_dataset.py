@@ -57,6 +57,9 @@ class S3DIS(torch_data.Dataset):
         self.input_colors = {'training': [], 'validation': []}
         self.input_labels = {'training': [], 'validation': []}
         self.input_names = {'training': [], 'validation': []}
+
+        ConfigS3DIS.ignored_label_inds = [self.label_to_idx[ign_label] for ign_label in self.ignored_labels]
+        ConfigS3DIS.class_weights = DataProcessing.get_class_weights('S3DIS')
         self.load_sub_sampled_clouds(ConfigS3DIS.sub_grid_size)
 
     def load_sub_sampled_clouds(self, sub_grid_size):
