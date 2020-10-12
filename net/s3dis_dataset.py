@@ -191,8 +191,6 @@ class S3DIS(torch_data.Dataset):
         return input_list
     
     def collate_fn(self, batch):
-        pass
-        # todo
         queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx = [], [], [], [], []
         for i in range(len(batch)):
             queried_pc_xyz.append(batch[i][0])

@@ -25,7 +25,7 @@ from config.config_semantic3d import ConfigSemantic3D
 class Semantic3D(torch_data.Dataset):
     def __init__(self):
         self.name = 'Semantic3D'
-        self.dataset_path = os.path.join(root_dir, 'data/semantic3d')
+        self.path = os.path.join(root_dir, 'data/semantic3d')
         self.label_to_names = {0: 'unlabeled',
                                 1: 'man-made terrain',
                                 2: 'natural terrain',
@@ -152,7 +152,7 @@ class Semantic3D(torch_data.Dataset):
 
             # Validation projection and labels
             if file_path in self.val_files:
-                proj_file = os.path.join(tree_path, '{:s}_project.pkl'.format(cloud_name))
+                proj_file = os.path.join(tree_path, '{:s}_proj.pkl'.format(cloud_name))
                 with open(proj_file, 'rb') as f:
                     proj_idx, labels = pickle.load(f)
                 self.val_proj += [proj_idx]
@@ -160,7 +160,7 @@ class Semantic3D(torch_data.Dataset):
 
             # Test projection
             if file_path in self.test_files:
-                proj_file = os.path.join(tree_path, '{:s}_project.pkl'.format(cloud_name))
+                proj_file = os.path.join(tree_path, '{:s}_proj.pkl'.format(cloud_name))
                 with open(proj_file, 'rb') as f:
                     proj_idx, labels = pickle.load(f)
                 self.test_proj += [proj_idx]
@@ -177,9 +177,11 @@ class Semantic3D(torch_data.Dataset):
 
     def __len__(self):
         if self.split == 'training':
-            return len(self.input_trees['training']) * 240
+            return len(self.input_trees['training'])
         elif self.split == 'validation':
-            return len(self.input_trees['validation']) * 240
+            return len(self.input_trees['validation'])
+        elif self.split == 'test':
+            return len(self.input_trees['test'])
 
     def __getitem__(self, item):
         queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx = self.spatially_regular_gen(item)
@@ -229,12 +231,40 @@ class Semantic3D(torch_data.Dataset):
         s = torch.sin(theta)
         cs0 = torch.zeros_like(c)
         cs1 = torch.ones_like(c)
-        R = torch.stack([c, -s, cs0, s, c, cs0, cs0, cs0, cs1], dim=3)
-        stacked_rots = tf.reshape(R, (3, 3))
+        R = torch.stack([c, -s, cs0, s, c, cs0, cs0, cs0, cs1], dim=1)
+        stacked_rots = torch.reshape(R, (3, 3))
 
+        # Apply rotations
+        transformed_xyz = torch.reshape(torch.matmul(xyz, stacked_rots), [-1, 3])
+        # Choose random scales for each example
+        min_s = ConfigSemantic3D.augment_scale_min
+        max_s = ConfigSemantic3D.augment_scale_max
+        if ConfigSemantic3D.augment_scale_anisotropic:
+            s = torch.Tensor(1, 3).uniform_(min_s, max_s)
+        else:
+            s = torch.Tensor(1, 1).uniform_(min_s, max_s)
+        
+        symmetries = []
+        for i in range(3):
+            if ConfigSemantic3D.augment_symmetries[i]:
+                symmetries.append(torch.round(torch.Tensor(1,1).uniform_(0, None)) * 2 - 1)
+            else:
+                symmetries.append(torch.ones(1,1))
+        s *= torch.cat(symmetries, dim=1)
+
+        # Create N x 3 vector of scales to multiply with stacked_points
+        stacked_scales = stacked_scales.repeat(transformed_xyz.shape[0], 1)
+
+        # Apply scales
+        transformed_xyz = transformed_xyz * stacked_scales
+        noise = torch.Tensor(transformed_xyz.shape[0], transformed_xyz.shape[1], transformed_xyz.shape[3]).normal_(std=ConfigSemantic3D.augment_noise)
+        transformed_xyz = transformed_xyz + noise
+        rgb = features[:, :3]
+        stacked_features = torch.cat([transformed_xyz, rgb], dim=1)
+        return stacked_features
 
     def tf_map(self, batch_xyz, batch_features, batch_labels, batch_pc_idx, batch_cloud_idx):
-        batch_features = np.concatenate([batch_xyz, batch_features], axis=-1)
+        batch_features = self.tf_augment_input([batch_xyz, batch_features])
         input_points = []
         input_neighbors = []
         input_pools = []
@@ -259,8 +289,6 @@ class Semantic3D(torch_data.Dataset):
         return input_list
     
     def collate_fn(self, batch):
-        pass
-        # todo
         queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx = [], [], [], [], []
         for i in range(len(batch)):
             queried_pc_xyz.append(batch[i][0])
@@ -277,7 +305,7 @@ class Semantic3D(torch_data.Dataset):
 
         flat_inputs = self.tf_map(queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx)
 
-        num_layers = ConfigS3DIS.num_layers
+        num_layers = ConfigSemantic3D.num_layers
         inputs = {}
         inputs['xyz'] = []
         for tmp in flat_inputs[:num_layers]:
