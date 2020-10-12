@@ -224,9 +224,9 @@ class Semantic3D(torch_data.Dataset):
         return queried_pc_xyz, queried_pc_colors.astype(np.float32), queried_pc_labels, query_idx.astype(np.int32), np.array([cloud_idx], dtype=np.int32)
 
     def tf_augment_input(self, inputs):
-        xyz = inputs[0]
+        xyz = torch.from_numpy(inputs[0])
         features = inputs[1]
-        theta = torch.Tensor(1,).uniform_(0, 2 * np.pi)
+        theta = torch.DoubleTensor(1,).uniform_(0, 2 * np.pi)
         c = torch.cos(theta)
         s = torch.sin(theta)
         cs0 = torch.zeros_like(c)
@@ -247,21 +247,22 @@ class Semantic3D(torch_data.Dataset):
         symmetries = []
         for i in range(3):
             if ConfigSemantic3D.augment_symmetries[i]:
-                symmetries.append(torch.round(torch.Tensor(1,1).uniform_(0, None)) * 2 - 1)
+                symmetries.append(torch.round(torch.Tensor(1,1).uniform_(0, 1)) * 2 - 1)
             else:
                 symmetries.append(torch.ones(1,1))
         s *= torch.cat(symmetries, dim=1)
 
         # Create N x 3 vector of scales to multiply with stacked_points
-        stacked_scales = stacked_scales.repeat(transformed_xyz.shape[0], 1)
+        stacked_scales = s.repeat(transformed_xyz.shape[0], 1)
 
         # Apply scales
         transformed_xyz = transformed_xyz * stacked_scales
-        noise = torch.Tensor(transformed_xyz.shape[0], transformed_xyz.shape[1], transformed_xyz.shape[3]).normal_(std=ConfigSemantic3D.augment_noise)
+        noise = torch.Tensor(transformed_xyz.shape[0], transformed_xyz.shape[1]).normal_(std=ConfigSemantic3D.augment_noise)
         transformed_xyz = transformed_xyz + noise
-        rgb = features[:, :3]
+        transformed_xyz = transformed_xyz.unsqueeze(dim=0)
+        rgb = torch.from_numpy(features[:, :3])
         stacked_features = torch.cat([transformed_xyz, rgb], dim=1)
-        return stacked_features
+        return stacked_features.numpy()
 
     def tf_map(self, batch_xyz, batch_features, batch_labels, batch_pc_idx, batch_cloud_idx):
         batch_features = self.tf_augment_input([batch_xyz, batch_features])

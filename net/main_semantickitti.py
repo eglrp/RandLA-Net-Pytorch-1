@@ -178,7 +178,7 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_path', default='output/semantickitti_checkpoint.tar', help='Model checkpoint path [default: None]')
     parser.add_argument('--log_dir', default='output', help='Dump dir to save model checkpoint [default: log]')
     parser.add_argument('--max_epoch', type=int, default=400, help='Epoch to run [default: 180]')
-    parser.add_argument('--batch_size', type=int, default=2, help='Batch Size during training [default: 8]')
+    parser.add_argument('--batch_size', type=int, default=1, help='Batch Size during training [default: 8]')
     FLAGS = parser.parse_args()
 
     f_out = mkdir_log(FLAGS.log_dir)

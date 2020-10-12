@@ -1,7 +1,7 @@
 #! ~/.miniconda3/envs/pytorch/bin/python
 
 class ConfigSemantic3D:
-    channels = 6
+    channels = 3
     k_n = 16  # KNN
     num_layers = 5  # Number of layers
     num_points = 65536  # Number of input points
