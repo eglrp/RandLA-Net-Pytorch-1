@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 import pickle
 import datetime
 import argparse
@@ -43,7 +44,7 @@ def adjust_learning_rate(optimizer, epoch, config, writer):
     lr = lr * config.lr_decays[epoch]
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
-    writer.add_scalar('learning rate', lr, epoch * config.batch_size)
+    writer.add_scalar('learning rate', lr, epoch)
 
 def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out, writer):
     stat_dict = {}  # collect statistics
@@ -62,20 +63,14 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
         optimizer.zero_grad()
         end_points = net(batch_data)
         loss, end_points = compute_loss(end_points, config)
-        writer.add_scalar('training loss', loss, (epoch_count * len(train_dataloader) + batch_idx) * config.batch_size)
+        writer.add_scalar('training loss', loss, (epoch_count * len(train_dataloader) + batch_idx))
         
         loss.backward()
         optimizer.step()
 
         acc, end_points = compute_acc(end_points)
-        writer.add_scalar('training accuracy', acc, (epoch_count * len(train_dataloader) + batch_idx)*config.batch_size)
+        writer.add_scalar('training accuracy', acc, (epoch_count * len(train_dataloader) + batch_idx))
         iou_calc.add_data(end_points)
-
-
-        # labels = end_points['labels']
-        # print(labels)
-        # valid_labels = end_points['valid_labels']
-        # print(valid_labels)
 
         for key in end_points:
             if 'loss' in key or 'acc' in key or 'iou' in key:
@@ -87,15 +82,15 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
             log_out(' ---- batch: %03d ----' % (batch_idx + 1), f_out)
             for key in sorted(stat_dict.keys()):
                 log_out('mean %s: %f' % (key, stat_dict[key] / batch_interval), f_out)
-                writer.add_scalar('training mean %s'%(key), stat_dict[key] / batch_interval, (epoch_count * len(train_dataloader) + batch_idx)*config.batch_size)
+                writer.add_scalar('training mean {}'.format(key), stat_dict[key] / batch_interval, (epoch_count * len(train_dataloader) + batch_idx))
                 stat_dict[key] = 0
 
         for name, param in net.named_parameters():
-            writer.add_histogram(name + '_grad', param.grad, (epoch_count * len(train_dataloader) + batch_idx)*config.batch_size)
-            writer.add_histogram(name + '_data', param, (epoch_count * len(train_dataloader) + batch_idx)*config.batch_size)
+            writer.add_histogram(name + '_grad', param.grad, (epoch_count * len(train_dataloader) + batch_idx))
+            writer.add_histogram(name + '_data', param, (epoch_count * len(train_dataloader) + batch_idx))
         writer.flush()
     mean_iou, iou_list = iou_calc.compute_iou()
-    writer.add_scalar('training mean iou', mean_iou, (epoch_count * len(train_dataloader))*config.batch_size)
+    writer.add_scalar('training mean iou', mean_iou, (epoch_count * len(train_dataloader)))
     log_out('mean IoU:{:.1f}'.format(mean_iou * 100), f_out)
     s = 'IoU:'
     for iou_tmp in iou_list:
@@ -110,6 +105,7 @@ def evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out):
     net.eval() # set model to eval mode (for bn and dp)
     iou_calc = IoUCalculator(config)
     for batch_idx, batch_data in enumerate(test_dataloader):
+        t_start = time.time()
         for key in batch_data:
             if type(batch_data[key]) is list:
                 for i in range(len(batch_data[key])):
@@ -122,9 +118,9 @@ def evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out):
             end_points = net(batch_data)
 
         loss, end_points = compute_loss(end_points, config)
-        writer.add_scalar('eval loss', loss, (epoch_count* len(test_dataloader) + batch_idx)*config.batch_size)
+        writer.add_scalar('eval loss', loss, (epoch_count* len(test_dataloader) + batch_idx))
         acc, end_points = compute_acc(end_points)
-        writer.add_scalar('eval acc', acc, (epoch_count* len(test_dataloader) + batch_idx)*config.batch_size)
+        writer.add_scalar('eval acc', acc, (epoch_count* len(test_dataloader) + batch_idx))
         iou_calc.add_data(end_points)
 
         # Accumulate statistics and print out
@@ -140,9 +136,9 @@ def evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out):
 
     for key in sorted(stat_dict.keys()):
         log_out('eval mean %s: %f' % (key, stat_dict[key] / (float(batch_idx + 1))), f_out)
-        # writer.add_scalar('eval mean %s'% (key), stat_dict[key] / (float(batch_idx + 1)), (EPOCH_CNT * len(train_dataloader))*config.batch_size)
+        writer.add_scalar('eval mean {}'.format(key), stat_dict[key] / (float(batch_idx + 1)), (EPOCH_CNT * len(train_dataloader)))
     mean_iou, iou_list = iou_calc.compute_iou()
-    # writer.add_scalar('eval mean iou', mean_iou, (EPOCH_CNT * len(train_dataloader))*config.batch_size)
+    writer.add_scalar('eval mean iou', mean_iou, (EPOCH_CNT * len(train_dataloader)))
     log_out('mean IoU:{:.1f}'.format(mean_iou * 100), f_out)
     s = 'IoU:'
     for iou_tmp in iou_list:
@@ -177,7 +173,7 @@ def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch
 
 
 if __name__ == '__main__':
-    writer = SummaryWriter('output/tensorboard')
+    writer = SummaryWriter('output/semantickitti_tensorboard')
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint_path', default='output/semantickitti_checkpoint.tar', help='Model checkpoint path [default: None]')
     parser.add_argument('--log_dir', default='output', help='Dump dir to save model checkpoint [default: log]')
