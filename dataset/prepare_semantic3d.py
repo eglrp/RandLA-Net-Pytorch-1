@@ -52,7 +52,7 @@ def convert_txt2ply(save_path=None, sub_grid_size=0.06):
         if os.path.exists(os.path.join(sub_pointcloud_folder, filename + '_KDTree.pkl')):
             continue
 
-        pointcloud = DataProcessing.load_pointcloud_semantic3d(pointcloud_path)
+        pointcloud = DataProcessing.load_pc_semantic3d(pointcloud_path)
         label_path = pointcloud_path[:-4] + '.labels'
         print(label_path)
         if os.path.exists(label_path):
