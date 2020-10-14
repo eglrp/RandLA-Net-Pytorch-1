@@ -134,9 +134,9 @@ def evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out):
 
     for key in sorted(stat_dict.keys()):
         log_out('eval mean %s: %f' % (key, stat_dict[key] / (float(batch_idx + 1))), f_out)
-        # writer.add_scalar('eval mean %s'% (key), stat_dict[key] / (float(batch_idx + 1)), (EPOCH_CNT * len(train_dataloader))*config.batch_size)
+        # writer.add_scalar('eval mean %s'% (key), stat_dict[key] / (float(batch_idx + 1)), (epoch * len(train_dataloader))*config.batch_size)
     mean_iou, iou_list = iou_calc.compute_iou()
-    # writer.add_scalar('eval mean iou', mean_iou, (EPOCH_CNT * len(train_dataloader))*config.batch_size)
+    # writer.add_scalar('eval mean iou', mean_iou, (epoch * len(train_dataloader))*config.batch_size)
     log_out('mean IoU:{:.1f}'.format(mean_iou * 100), f_out)
     s = 'IoU:'
     for iou_tmp in iou_list:
@@ -153,9 +153,9 @@ def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch
         np.random.seed()
         train_one_epoch(net, train_dataloader, optimizer, epoch, config, f_out, writer)
 
-        if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9:
+        if epoch == 0 or epoch % 10 == 9:
             log_out('**** EVAL EPOCH %03d START****' % (epoch), f_out)
-            evaluate_one_epoch(net, test_dataloader, config, f_out)
+            evaluate_one_epoch(net, test_dataloader, epoch, config, f_out)
             log_out('**** EVAL EPOCH %03d END****' % (epoch), f_out)
         
         save_dict = {'epoch': epoch+1, # after training one epoch, the start_epoch should be epoch+1
@@ -175,13 +175,13 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_path', default='output/semantic3d_checkpoint.tar', help='Model checkpoint path [default: None]')
     parser.add_argument('--log_dir', default='output', help='Dump dir to save model checkpoint [default: log]')
     parser.add_argument('--max_epoch', type=int, default=400, help='Epoch to run [default: 180]')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch Size during training [default: 8]')
+    parser.add_argument('--batch_size', type=int, default=2, help='Batch Size during training [default: 8]')
     FLAGS = parser.parse_args()
 
     f_out = mkdir_log(FLAGS.log_dir)
 
-    train_dataset = Semantic3D()
-    test_dataset = Semantic3D()
+    train_dataset = Semantic3D('training')
+    test_dataset = Semantic3D('validation')
     # print('train dataset length:{}'.format(len(train_dataset)))
     # print('test dataset length:{}'.format(len(test_dataset)))
     train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=1, worker_init_fn=worker_init, collate_fn=train_dataset.collate_fn)
@@ -189,13 +189,15 @@ if __name__ == '__main__':
     # print('train datalodaer length:{}'.format(len(train_dataloader)))
     # print('test dataloader length:{}'.format(len(test_dataloader)))
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     net = RandLANET('Semantic3D', ConfigSemantic3D)
-    print(net)
+    # print(net)
     net.to(device)
+    torch.cuda.set_device(1) 
     if torch.cuda.device_count() > 1:
         log_out("Let's use multi GPUs!", f_out)
-        net = nn.DataParallel(net, device_ids=[0,1,2,3])
+        net = nn.DataParallel(net, device_ids=[1,2,3,4])
     optimizer = optimizer.Adam(net.parameters(), lr=ConfigSemantic3D.learning_rate)
 
     it = -1

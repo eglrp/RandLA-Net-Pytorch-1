@@ -104,9 +104,6 @@ class Building_block(nn.Module):
         d = pc.shape[2]
         index_input = neighbor_idx.reshape(batch_size, -1)
         features = torch.gather(pc, 1, index_input.unsqueeze(-1).repeat(1, 1, pc.shape[2]))
-        print('features',features.shape)
-        # print('batch_size', batch_size)
-        # print('num_points', num_points)
         features = features.reshape(batch_size, num_points, neighbor_idx.shape[-1], d)  # batch*npoint*nsamples*channel
         
         return features
@@ -195,7 +192,6 @@ class RandLANET(nn.Module):
         return interpolated_features
 
     def features(self, end_points):
-        print(end_points.shape)
         features = end_points # (batch, 3, N)
         features = self.fc0(features) # (batch, 8, N)
         features = features.unsqueeze(dim=3)  # (batch, 8, N, 1)

@@ -20,7 +20,7 @@ from dataset.dataprocessing import DataProcessing
 from config.config_semantickitti import ConfigSemanticKITTI
 
 class SemanticKITTI(torch_data.Dataset):
-    def __init__(self, mode, test_id=None):
+    def __init__(self, mode, test_id):
         self.name = 'SemanticKITTI'
         self.dataset_path = os.path.join(root_dir, 'data/semantickitti/dataset/sequences_0.06')
         self.label_to_names = {0: 'unlabeled',
@@ -47,12 +47,11 @@ class SemanticKITTI(torch_data.Dataset):
         self.label_values = np.sort([k for k, v in self.label_to_names.items()])
         self.label_to_idx = {l: i for i, l in enumerate(self.label_values)}
         self.ignored_labels = np.sort([0])
+        self.val_split = '08'
         self.seq_list = np.sort(os.listdir(self.dataset_path))
-
-        if mode == 'test':
-            self.test_scan_number = str(test_id)
+        self.test_scan_number = str(test_id)
         self.mode = mode
-        self.train_list, self.val_list, self.test_list = DataProcessing.get_file_list(self.dataset_path, str(test_id))
+        self.train_list, self.val_list, self.test_list = DataProcessing.get_file_list(self.dataset_path, self.test_scan_number)
         if mode == 'training':
             self.data_list = self.train_list
         elif mode == 'validation':
@@ -66,8 +65,7 @@ class SemanticKITTI(torch_data.Dataset):
         self.possibility = []
         self.min_possibility = []
         if mode == 'test':
-            path_list = self.data_list
-            for test_file_name in path_list:
+            for test_file_name in self.data_list:
                 points = np.load(test_file_name)
                 self.possibility += [np.random.rand(points.shape[0]) * 1e-3]
                 self.min_possibility += [float(np.min(self.possibility[-1]))]
@@ -101,7 +99,7 @@ class SemanticKITTI(torch_data.Dataset):
         else:
             cloud_ind = int(np.argmin(self.min_possibility))
             pick_idx = np.argmin(self.possibility[cloud_ind])
-            pc_path = path_list[cloud_ind]
+            pc_path = self.data_list[cloud_ind]
             pc, tree, labels = self.get_data(pc_path)
             selected_pc, selected_labels, selected_idx = self.crop_pc(pc, labels, tree, pick_idx)
 

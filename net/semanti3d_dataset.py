@@ -23,8 +23,9 @@ from dataset.dataprocessing import DataProcessing
 from config.config_semantic3d import ConfigSemantic3D
 
 class Semantic3D(torch_data.Dataset):
-    def __init__(self):
+    def __init__(self, mode):
         self.name = 'Semantic3D'
+        self.mode = mode
         self.path = os.path.join(root_dir, 'data/semantic3d')
         self.label_to_names = {0: 'unlabeled',
                                 1: 'man-made terrain',
@@ -103,6 +104,8 @@ class Semantic3D(torch_data.Dataset):
             'stgallencathedral_station3_intensity_rgb.ply': 'stgallencathedral3.labels',
             'stgallencathedral_station6_intensity_rgb.ply': 'stgallencathedral6.labels'}
 
+        ConfigSemantic3D.ignored_label_inds = [self.label_to_idx[ign_label] for ign_label in self.ignored_labels]
+        ConfigSemantic3D.class_weights = DataProcessing.get_class_weights('Semantic3D')
         self.load_sub_sampled_clouds(ConfigSemantic3D.sub_grid_size)
 
     
@@ -114,13 +117,10 @@ class Semantic3D(torch_data.Dataset):
             print('Load_pc_' + str(i) + ': ' + cloud_name)
             if file_path in self.val_files:
                 cloud_split = 'validation'
-                self.split = 'validation'
             elif file_path in self.train_files:
                 cloud_split = 'training'
-                self.split = 'training'
             else:
                 cloud_split = 'test'
-                self.split = 'test'
 
             # Name of the input files
             kd_tree_file = os.path.join(tree_path, '{:s}_KDTree.pkl'.format(cloud_name))
@@ -167,20 +167,20 @@ class Semantic3D(torch_data.Dataset):
                 self.test_labels += [labels]
         print('finished')
         
-        for i, tree in enumerate(self.input_trees[self.split]):
-            self.possibility[self.split] += [np.random.rand(tree.data.shape[0]) * 1e-3]
-            self.min_possibility[self.split] += [float(np.min(self.possibility[self.split][-1]))]
+        for i, tree in enumerate(self.input_trees[self.mode]):
+            self.possibility[self.mode] += [np.random.rand(tree.data.shape[0]) * 1e-3]
+            self.min_possibility[self.mode] += [float(np.min(self.possibility[self.mode][-1]))]
 
-        if self.split != 'test':
-            _, num_class_total = np.unique(np.hstack(self.input_labels[self.split]), return_counts=True)
-            self.class_weight[self.split] += [np.squeeze([num_class_total / np.sum(num_class_total)], axis=0)]
+        if self.mode != 'test':
+            _, num_class_total = np.unique(np.hstack(self.input_labels[self.mode]), return_counts=True)
+            self.class_weight[self.mode] += [np.squeeze([num_class_total / np.sum(num_class_total)], axis=0)]
 
     def __len__(self):
-        if self.split == 'training':
+        if self.mode == 'training':
             return len(self.input_trees['training'])
-        elif self.split == 'validation':
+        elif self.mode == 'validation':
             return len(self.input_trees['validation'])
-        elif self.split == 'test':
+        elif self.mode == 'test':
             return len(self.input_trees['test'])
 
     def __getitem__(self, item):
@@ -189,37 +189,37 @@ class Semantic3D(torch_data.Dataset):
 
     def spatially_regular_gen(self, item):
         # Generator loop
-        cloud_idx = int(np.argmin(self.min_possibility[self.split]))
+        cloud_idx = int(np.argmin(self.min_possibility[self.mode]))
         # choose the point with the minimum of possibility in the cloud as query point
-        point_ind = np.argmin(self.possibility[self.split][cloud_idx])
+        point_ind = np.argmin(self.possibility[self.mode][cloud_idx])
         # Get all points within the cloud from tree structure
-        points = np.array(self.input_trees[self.split][cloud_idx].data, copy=False)
+        points = np.array(self.input_trees[self.mode][cloud_idx].data, copy=False)
         # Center point of input region
         center_point = points[point_ind, :].reshape(1, -1)
         # Add noise to the center point
         noise = np.random.normal(scale=ConfigSemantic3D.noise_init / 10, size=center_point.shape)
         pick_point = center_point + noise.astype(center_point.dtype)
-        query_idx = self.input_trees[self.split][cloud_idx].query(pick_point, k=ConfigSemantic3D.num_points)[1][0]
+        query_idx = self.input_trees[self.mode][cloud_idx].query(pick_point, k=ConfigSemantic3D.num_points)[1][0]
         
         # Shuffle index
         query_idx = DataProcessing.shuffle_idx(query_idx)
         # Get corresponding points and colors based on the index
         queried_pc_xyz = points[query_idx]
         queried_pc_xyz[:, 0:2] = queried_pc_xyz[:, 0:2] - pick_point[:, 0:2]
-        queried_pc_colors = self.input_colors[self.split][cloud_idx][query_idx]
-        if self.split == 'test':
+        queried_pc_colors = self.input_colors[self.mode][cloud_idx][query_idx]
+        if self.mode == 'test':
             queried_pc_labels = np.zeros(queried_pc_xyz.shape[0])
             queried_pt_weight = 1
         else:
-            queried_pc_labels = self.input_labels[self.split][cloud_idx][query_idx]
+            queried_pc_labels = self.input_labels[self.mode][cloud_idx][query_idx]
             queried_pc_labels = np.array([self.label_to_idx[l] for l in queried_pc_labels])
-            queried_pt_weight = np.array([self.class_weight[self.split][0][n] for n in queried_pc_labels])
+            queried_pt_weight = np.array([self.class_weight[self.mode][0][n] for n in queried_pc_labels])
 
         # Update the possibility of the selected points
         dists = np.sum(np.square((points[query_idx] - pick_point).astype(np.float32)), axis=1)
         delta = np.square(1 - dists / np.max(dists)) * queried_pt_weight
-        self.possibility[self.split][cloud_idx][query_idx] += delta
-        self.min_possibility[self.split][cloud_idx] = float(np.min(self.possibility[self.split][cloud_idx]))
+        self.possibility[self.mode][cloud_idx][query_idx] += delta
+        self.min_possibility[self.mode][cloud_idx] = float(np.min(self.possibility[self.mode][cloud_idx]))
 
         return queried_pc_xyz, queried_pc_colors.astype(np.float32), queried_pc_labels, query_idx.astype(np.int32), np.array([cloud_idx], dtype=np.int32)
 
@@ -259,13 +259,17 @@ class Semantic3D(torch_data.Dataset):
         transformed_xyz = transformed_xyz * stacked_scales
         noise = torch.Tensor(transformed_xyz.shape[0], transformed_xyz.shape[1]).normal_(std=ConfigSemantic3D.augment_noise)
         transformed_xyz = transformed_xyz + noise
-        transformed_xyz = transformed_xyz.unsqueeze(dim=0)
         rgb = torch.from_numpy(features[:, :3])
-        stacked_features = torch.cat([transformed_xyz, rgb], dim=1)
-        return stacked_features.numpy()
+        stacked_features = torch.cat((transformed_xyz, rgb), dim=1)
+        return stacked_features
 
     def tf_map(self, batch_xyz, batch_features, batch_labels, batch_pc_idx, batch_cloud_idx):
-        batch_features = self.tf_augment_input([batch_xyz, batch_features])
+        batch_feature = []
+        for i in range(batch_xyz.shape[1]):
+            xyz = batch_xyz[:, i, :]
+            features = batch_features[:, i, :]
+            batch_feature.append(self.tf_augment_input([xyz, features]))
+        batch_feature = torch.stack(batch_feature, dim=1).numpy()
         input_points = []
         input_neighbors = []
         input_pools = []
@@ -286,7 +290,7 @@ class Semantic3D(torch_data.Dataset):
             batch_xyz = sub_points
 
         input_list = input_points + input_neighbors + input_pools + input_up_samples
-        input_list += [batch_features, batch_labels, batch_pc_idx, batch_cloud_idx]
+        input_list += [batch_feature, batch_labels, batch_pc_idx, batch_cloud_idx]
         return input_list
     
     def collate_fn(self, batch):

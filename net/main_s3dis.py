@@ -180,8 +180,8 @@ if __name__ == '__main__':
 
     f_out = mkdir_log(FLAGS.log_dir)
 
-    train_dataset = S3DIS()
-    test_dataset = S3DIS()
+    train_dataset = S3DIS('training')
+    test_dataset = S3DIS('validation')
     # print('train dataset length:{}'.format(len(train_dataset)))
     # print('test dataset length:{}'.format(len(test_dataset)))
     train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=1, worker_init_fn=worker_init, collate_fn=train_dataset.collate_fn)
@@ -189,13 +189,13 @@ if __name__ == '__main__':
     # print('train datalodaer length:{}'.format(len(train_dataloader)))
     # print('test dataloader length:{}'.format(len(test_dataloader)))
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     net = RandLANET('S3DIS', ConfigS3DIS)
-    print(net)
     net.to(device)
+    torch.cuda.set_device(1) 
     if torch.cuda.device_count() > 1:
         log_out("Let's use multi GPUs!", f_out)
-        net = nn.DataParallel(net, device_ids=[0,1,2,3])
+        net = nn.DataParallel(net, device_ids=[1,2,3,4])
     optimizer = optimizer.Adam(net.parameters(), lr=ConfigS3DIS.learning_rate)
 
     it = -1

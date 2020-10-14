@@ -178,13 +178,14 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_path', default='output/semantickitti_checkpoint.tar', help='Model checkpoint path [default: None]')
     parser.add_argument('--log_dir', default='output', help='Dump dir to save model checkpoint [default: log]')
     parser.add_argument('--max_epoch', type=int, default=400, help='Epoch to run [default: 180]')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch Size during training [default: 8]')
+    parser.add_argument('--batch_size', type=int, default=4, help='Batch Size during training [default: 8]')
+    parser.add_argument('--test_area', type=str, default='14', help='options: 08, 11,12,13,14,15,16,17,18,19,20,21')
     FLAGS = parser.parse_args()
 
     f_out = mkdir_log(FLAGS.log_dir)
 
-    train_dataset = SemanticKITTI('training')
-    test_dataset = SemanticKITTI('validation')
+    train_dataset = SemanticKITTI('training', FLAGS.test_area)
+    test_dataset = SemanticKITTI('validation', FLAGS.test_area)
     print('train dataset length:{}'.format(len(train_dataset)))
     print('test dataset length:{}'.format(len(test_dataset)))
     train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=20, worker_init_fn=worker_init, collate_fn=train_dataset.collate_fn)
@@ -192,13 +193,13 @@ if __name__ == '__main__':
     print('train datalodaer length:{}'.format(len(train_dataloader)))
     print('test dataloader length:{}'.format(len(test_dataloader)))
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     net = RandLANET('SemanticKITTI', ConfigSemanticKITTI)
-    print(net)
     net.to(device)
+    torch.cuda.set_device(1) 
     if torch.cuda.device_count() > 1:
         log_out("Let's use multi GPUs!", f_out)
-        net = nn.DataParallel(net, device_ids=[0,1,2,3])
+        net = nn.DataParallel(net, device_ids=[1,2,3,4])
     optimizer = optimizer.Adam(net.parameters(), lr=ConfigSemanticKITTI.learning_rate)
 
     it = -1
