@@ -136,9 +136,9 @@ def evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out):
 
     for key in sorted(stat_dict.keys()):
         log_out('eval mean %s: %f' % (key, stat_dict[key] / (float(batch_idx + 1))), f_out)
-        writer.add_scalar('eval mean {}'.format(key), stat_dict[key] / (float(batch_idx + 1)), (EPOCH_CNT * len(train_dataloader)))
+        writer.add_scalar('eval mean {}'.format(key), stat_dict[key] / (float(batch_idx + 1)), (epoch_count * len(test_dataloader)))
     mean_iou, iou_list = iou_calc.compute_iou()
-    writer.add_scalar('eval mean iou', mean_iou, (EPOCH_CNT * len(train_dataloader)))
+    writer.add_scalar('eval mean iou', mean_iou, (epoch_count * len(test_dataloader)))
     log_out('mean IoU:{:.1f}'.format(mean_iou * 100), f_out)
     s = 'IoU:'
     for iou_tmp in iou_list:
