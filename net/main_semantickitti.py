@@ -99,8 +99,8 @@ def train_one_epoch(net, train_dataloader, optimizer, epoch_count, config, f_out
     writer.flush()
     writer.close()
 
-
 def evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out):
+    current_loss = None
     stat_dict = {} # collect statistics
     net.eval() # set model to eval mode (for bn and dp)
     iou_calc = IoUCalculator(config)
@@ -146,18 +146,23 @@ def evaluate_one_epoch(net, test_dataloader, epoch_count, config, f_out):
     log_out(s, f_out)
     writer.flush()
     writer.close()
+
+    current_loss = stat_dict['loss'] / (float(batch_idx + 1))
+    return current_loss
     
 def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch, flags, f_out, writer):
     loss = 0
+    min_loss = 100
+    current_loss = None
     for epoch in range(start_epoch, FLAGS.max_epoch):
-        log_out('**** EPOCH %03d ****' % (epoch), f_out)
+        log_out('**************** EPOCH %03d ****************' % (epoch), f_out)
         log_out(str(datetime.datetime.now()), f_out)
         np.random.seed()
         train_one_epoch(net, train_dataloader, optimizer, epoch, config, f_out, writer)
 
         if epoch == 0 or epoch % 10 == 9:
             log_out('**** EVAL EPOCH %03d START****' % (epoch), f_out)
-            evaluate_one_epoch(net, test_dataloader, epoch, config, f_out)
+            current_loss = evaluate_one_epoch(net, test_dataloader, epoch, config, f_out)
             log_out('**** EVAL EPOCH %03d END****' % (epoch), f_out)
         
         save_dict = {'epoch': epoch+1, # after training one epoch, the start_epoch should be epoch+1
@@ -169,16 +174,21 @@ def train(net, train_dataloader, test_dataloader, optimizer, config, start_epoch
             save_dict['model_state_dict'] = net.module.state_dict()
         except:
             save_dict['model_state_dict'] = net.state_dict()
-        torch.save(save_dict, os.path.join(flags.log_dir, 'semantickitti_checkpoint.tar'))
 
+        if min_loss<=current_loss:
+            print("don't save model")
+        elif min_loss>current_loss:
+            torch.save(save_dict, os.path.join(flags.log_dir, 'semantickitti_checkpoint.tar'))
+            min_loss = current_loss
+            print('save model')
 
 if __name__ == '__main__':
     writer = SummaryWriter('output/semantickitti_tensorboard')
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint_path', default='output/semantickitti_checkpoint.tar', help='Model checkpoint path [default: None]')
     parser.add_argument('--log_dir', default='output', help='Dump dir to save model checkpoint [default: log]')
-    parser.add_argument('--max_epoch', type=int, default=400, help='Epoch to run [default: 180]')
-    parser.add_argument('--batch_size', type=int, default=4, help='Batch Size during training [default: 8]')
+    parser.add_argument('--max_epoch', type=int, default=ConfigSemanticKITTI.max_epoch, help='Epoch to run [default: 180]')
+    parser.add_argument('--batch_size', type=int, default=ConfigSemanticKITTI.batch_size, help='Batch Size during training [default: 8]')
     parser.add_argument('--test_area', type=str, default='14', help='options: 08, 11,12,13,14,15,16,17,18,19,20,21')
     FLAGS = parser.parse_args()
 
