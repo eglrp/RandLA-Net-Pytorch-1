@@ -55,7 +55,7 @@ class Att_pooling(nn.Module):
         att_activation = self.fc(feature_set)
         # semantickitti: (16,16),(64,64),(128,128),(256,256)
         att_scores = F.softmax(att_activation, dim=3)
-        f_agg = feature_set * att_scores
+        f_agg = feature_set.contiguous() * att_scores
         f_agg = torch.sum(f_agg, dim=3, keepdim=True)
         f_agg = self.mlp(f_agg)
         return f_agg
