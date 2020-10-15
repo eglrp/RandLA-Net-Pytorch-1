@@ -137,7 +137,7 @@ class network:
     def evaluate_one_epoch(self, epoch_count):
         self.current_loss = None
         self.net.eval() # set model to eval mode (for bn and dp)
-        iou_calc = IoUCalculator(config)
+        iou_calc = IoUCalculator(self.config)
         for batch_idx, batch_data in enumerate(self.test_dataloader):
             t_start = time.time()
             for key in batch_data:
