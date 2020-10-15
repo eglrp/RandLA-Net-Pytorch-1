@@ -58,7 +58,7 @@ class network:
         if torch.cuda.device_count() > 1:
             log_out("Let's use multi GPUs!", self.f_out)
             device_ids=[1,2,3,4]
-            self.net = nn.DataParallel(net, device_ids=[1,2,3,4])
+            self.net = nn.DataParallel(self.net, device_ids=[1,2,3,4])
         self.optimizer = optimizer.Adam(self.net.parameters(), lr=self.config .learning_rate)
 
         self.end_points = {}
