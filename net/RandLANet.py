@@ -191,8 +191,8 @@ class RandLANET(nn.Module):
         interpolated_features = interpolated_features.unsqueeze(3)  # batch*channel*npoints*1
         return interpolated_features
 
-    def features(self, end_points):
-        features = end_points # (batch, 3, N)
+    def features(self, data):
+        features = data # (batch, 3, N)
         features = self.fc0(features) # (batch, 8, N)
         features = features.unsqueeze(dim=3)  # (batch, 8, N, 1)
         return features
@@ -242,13 +242,12 @@ class RandLANET(nn.Module):
         f_out = features.squeeze(3)
         return f_out
 
-    def forward(self, end_points):
+    def forward(self, xyz, neigh_idx, sub_idx, interp_idx, features, labels, input_inds,cloud_inds):
     
-        features = self.features(end_points['features']) # (batch, 8, N, 1)
-        f_out = self.encoder_decoder(features, end_points['xyz'], end_points['neigh_idx'], end_points['sub_idx'], end_points['interp_idx'])
+        feature = self.features(features) # (batch, 8, N, 1)
+        f_out = self.encoder_decoder(feature, xyz, neigh_idx, sub_idx, interp_idx)
 
-        end_points['logits'] = f_out
-        return end_points
+        return f_out
 
 def get_loss(logits, labels, pre_cal_weights):
     # calculate the weighted cross entropy according to the inverse frequency
@@ -260,9 +259,9 @@ def get_loss(logits, labels, pre_cal_weights):
     output_loss = output_loss.mean()
     return output_loss
 
-def compute_loss(end_points, cfg):
-    logits = end_points['logits']
-    labels = end_points['labels']
+def compute_loss(logits, labels, cfg):
+    # logits = end_points['logits']
+    # labels = end_points['labels']
 
     logits = logits.transpose(1, 2).reshape(-1, cfg.num_classes)
     labels = labels.reshape(-1)
@@ -284,17 +283,17 @@ def compute_loss(end_points, cfg):
         reducing_list = torch.cat([reducing_list[:ign_label], inserted_value, reducing_list[ign_label:]], 0)
     valid_labels = torch.gather(reducing_list, 0, valid_labels_init)
     loss = get_loss(valid_logits, valid_labels, cfg.class_weights)
-    end_points['valid_logits'], end_points['valid_labels'] = valid_logits, valid_labels
-    end_points['loss'] = loss
-    return loss, end_points
+    # end_points['valid_logits'], end_points['valid_labels'] = valid_logits, valid_labels
+    # end_points['loss'] = loss
+    return loss, valid_logits, valid_labels
     
-def compute_acc(end_points):
-    logits = end_points['valid_logits']
-    labels = end_points['valid_labels']
+def compute_acc(logits, labels):
+    # logits = end_points['valid_logits']
+    # labels = end_points['valid_labels']
     logits = logits.max(dim=1)[1]
     acc = (logits == labels).sum().float() / float(labels.shape[0])
-    end_points['acc'] = acc
-    return acc, end_points
+    # end_points['acc'] = acc
+    return acc
 
 
 class IoUCalculator:
@@ -304,9 +303,9 @@ class IoUCalculator:
         self.true_positive_classes = [0 for _ in range(cfg.num_classes)]
         self.cfg = cfg
 
-    def add_data(self, end_points):
-        logits = end_points['valid_logits']
-        labels = end_points['valid_labels']
+    def add_data(self, logits, labels):
+        # logits = end_points['valid_logits']
+        # labels = end_points['valid_labels']
         pred = logits.max(dim=1)[1]
         pred_valid = pred.detach().cpu().numpy()
         labels_valid = labels.detach().cpu().numpy()

@@ -50,15 +50,15 @@ class network:
         self.test_dataloader = DataLoaderX(self.test_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=20, worker_init_fn=self.worker_init, collate_fn=self.test_dataset.collate_fn, pin_memory=True)
         print('train datalodaer length:{}'.format(len(self.train_dataloader)))
         print('test dataloader length:{}'.format(len(self.test_dataloader)))
-        self.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.config = ConfigSemanticKITTI
         self.net = RandLANET('SemanticKITTI', self.config )
         self.net.to(self.device)
-        torch.cuda.set_device(1) 
-        if torch.cuda.device_count() > 1:
-            log_out("Let's use multi GPUs!", self.f_out)
-            device_ids=[1,2,3,4]
-            self.net = nn.DataParallel(self.net, device_ids=[1,2,3,4])
+        # torch.cuda.set_device(1) 
+        # if torch.cuda.device_count() > 1:
+        #     log_out("Let's use multi GPUs!", self.f_out)
+        #     device_ids=[1,2,3,4]
+        #     self.net = nn.DataParallel(self.net, device_ids=[1,2,3,4])
         self.optimizer = optimizer.Adam(self.net.parameters(), lr=self.config .learning_rate)
 
         self.end_points = {}
@@ -94,18 +94,30 @@ class network:
                 else:
                     batch_data[key] = batch_data[key].cuda()
 
+            xyz = batch_data['xyz'] # (batch,N,3)
+            neigh_idx = batch_data['neigh_idx'] # (batch,N,16)
+            sub_idx = batch_data['sub_idx']  # (batch,N/4,16)
+            interp_idx = batch_data['interp_idx'] # (batch,N,1)
+            features = batch_data['features'] # (batch, 3, N)
+            labels = batch_data['labels']  # (batch, N)
+            input_inds = batch_data['input_inds'] # (batch, N)
+            cloud_inds = batch_data['cloud_inds'] # (batch, 1)
+
             # Forward pass
             self.optimizer.zero_grad()
-            self.end_points = self.net(batch_data)
-            self.loss, self.end_points = compute_loss(self.end_points, self.config)
+            self.out = self.net(xyz, neigh_idx, sub_idx, interp_idx, features, labels, input_inds, cloud_inds)
+            self.loss, self.end_points['valid_logits'], self.end_points['valid_labels'] = compute_loss(self.out, labels, self.config)
+            self.end_points['loss'] = self.loss
+            # self.writer.add_graph(self.net, input_to_model=[xyz, neigh_idx, sub_idx, interp_idx, features, labels, input_inds, cloud_inds])
             self.writer.add_scalar('training loss', self.loss, (epoch_count * len(self.train_dataloader) + batch_idx))
             
             self.loss.backward()
             self.optimizer.step()
 
-            self.acc, self.end_points = compute_acc(self.end_points)
+            self.acc = compute_acc(self.end_points['valid_logits'], self.end_points['valid_labels'])
+            self.end_points['acc'] = self.acc
             self.writer.add_scalar('training accuracy', self.acc, (epoch_count * len(self.train_dataloader) + batch_idx))
-            iou_calc.add_data(self.end_points)
+            iou_calc.add_data(self.end_points['valid_logits'], self.end_points['valid_labels'])
 
             for key in self.end_points:
                 if 'loss' in key or 'acc' in key or 'iou' in key:
@@ -147,15 +159,26 @@ class network:
                 else:
                     batch_data[key] = batch_data[key].cuda()
 
+            xyz = batch_data['xyz'] # (batch,N,3)
+            neigh_idx = batch_data['neigh_idx'] # (batch,N,16)
+            sub_idx = batch_data['sub_idx']  # (batch,N/4,16)
+            interp_idx = batch_data['interp_idx'] # (batch,N,1)
+            features = batch_data['features'] # (batch, 3, N)
+            labels = batch_data['labels']  # (batch, N)
+            input_inds = batch_data['input_inds'] # (batch, N)
+            cloud_inds = batch_data['cloud_inds'] # (batch, 1)
+
             # Forward pass
             with torch.no_grad():
-                self.end_points = self.net(batch_data)
+                self.out = self.net(xyz, neigh_idx, sub_idx, interp_idx, features, labels, input_inds, cloud_inds)
 
-            self.loss, self.end_points = compute_loss(self.end_points, self.config)
+            self.loss, self.end_points['valid_logits'], self.end_points['valid_labels'] = compute_loss(self.out, labels, self.config)
+            self.end_points['loss'] = self.loss
             # self.writer.add_scalar('eval loss', self.loss, (epoch_count* len(self.test_dataloader) + batch_idx))
-            self.acc, self.end_points = compute_acc(self.end_points)
+            self.acc = compute_acc(self.end_points['valid_logits'], self.end_points['valid_labels'])
+            self.end_points['acc'] = self.acc
             # self.writer.add_scalar('eval acc', self.acc, (epoch_count* len(self.test_dataloader) + batch_idx))
-            iou_calc.add_data(self.end_points)
+            iou_calc.add_data(self.end_points['valid_logits'], self.end_points['valid_labels'])
 
             # Accumulate statistics and print out
             for key in self.end_points:
