@@ -50,11 +50,11 @@ class network:
         self.test_dataloader = DataLoaderX(self.test_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=20, worker_init_fn=self.worker_init, collate_fn=self.test_dataset.collate_fn, pin_memory=True)
         print('train datalodaer length:{}'.format(len(self.train_dataloader)))
         print('test dataloader length:{}'.format(len(self.test_dataloader)))
-        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
         self.config = ConfigSemanticKITTI
         self.net = RandLANET('SemanticKITTI', self.config )
         self.net.to(self.device)
-        torch.cuda.set_device(0) 
+        torch.cuda.set_device(1) 
         if torch.cuda.device_count() > 1:
             log_out("Let's use multi GPUs!", self.f_out)
             device_ids=[1,2,3,4]
@@ -206,16 +206,11 @@ class network:
                         }
 
             try:
-                save_dict['model_state_dict'] = net.module.state_dict()
+                save_dict['model_state_dict'] = self.net.module.state_dict()
             except:
-                save_dict['model_state_dict'] = net.state_dict()
-
-            if min_loss<=current_loss:
-                print("don't save model")
-            elif min_loss>current_loss:
-                torch.save(save_dict, os.path.join(self.FLAGS.log_dir, 'semantickitti_checkpoint.tar'))
-                min_loss = current_loss
-                print('save model')
+                save_dict['model_state_dict'] = self.net.state_dict()
+            
+            torch.save(save_dict, os.path.join(self.FLAGS.log_dir, 'semantickitti_checkpoint.tar'))
 
     def run(self):
         it = -1
