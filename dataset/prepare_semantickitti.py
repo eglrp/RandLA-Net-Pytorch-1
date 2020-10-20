@@ -49,8 +49,8 @@ for seq_id in sequence_list:
         scan_list = np.sort(os.listdir(pc_path))
         for scan_id in scan_list:
             print(scan_id)
-            points = DataProcessing.load_pointcloud_semantickitti(os.path.join(pc_path, scan_id))
-            labels = DataProcessing.load_label_semantickitti(os.path.join(label_path, str(scan_id[:-4]) + '.label'), remap_lut)
+            points = DataProcessing.load_pc_kitti(os.path.join(pc_path, scan_id))
+            labels = DataProcessing.load_label_kitti(os.path.join(label_path, str(scan_id[:-4]) + '.label'), remap_lut)
             sub_points, sub_labels = DataProcessing.grid_sub_sampling(points, labels=labels, grid_size=sub_grid_size)
             search_tree = KDTree(sub_points)
             KDTree_save = os.path.join(KDTree_path_out, str(scan_id[:-4]) + '.pkl')
@@ -72,7 +72,7 @@ for seq_id in sequence_list:
         scan_list = np.sort(os.listdir(pc_path))
         for scan_id in scan_list:
             print(scan_id)
-            points = DataProcessing.load_pointcloud_semantickitti(os.path.join(pc_path, scan_id))
+            points = DataProcessing.load_pc_kitti(os.path.join(pc_path, scan_id))
             sub_points = DataProcessing.grid_sub_sampling(points, grid_size=0.06)
             search_tree = KDTree(sub_points)
             proj_inds = np.squeeze(search_tree.query(points, return_distance=False))

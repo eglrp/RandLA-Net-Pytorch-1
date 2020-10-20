@@ -128,39 +128,6 @@ class SemanticKITTI(torch_data.Dataset):
             labels = np.squeeze(np.load(label_path))
         return points, search_tree, labels
 
-    @staticmethod
-    def crop_pc(points, labels, search_tree, pick_idx):
-        # crop a fixed size point cloud for training
-        center_point = points[pick_idx, :].reshape(1, -1)
-        select_idx = search_tree.query(center_point, k=ConfigSemanticKITTI.num_points)[1][0]
-        select_idx = DataProcessing.shuffle_idx(select_idx)
-        select_points = points[select_idx]
-        select_labels = labels[select_idx]
-        return select_points, select_labels, select_idx
-
-    def tf_map(self, batch_pc, batch_label, batch_pc_idx, batch_cloud_idx):
-        features = batch_pc
-        input_points = []
-        input_neighbors = []
-        input_pools = []
-        input_up_samples = []
-
-        for i in range(ConfigSemanticKITTI.num_layers):
-            neighbour_idx = DataProcessing.knn_search(batch_pc, batch_pc, ConfigSemanticKITTI.k_n)
-            sub_points = batch_pc[:, :batch_pc.shape[1] // ConfigSemanticKITTI.sub_sampling_ratio[i], :]
-            pool_i = neighbour_idx[:, :batch_pc.shape[1] // ConfigSemanticKITTI.sub_sampling_ratio[i], :]
-            up_i = DataProcessing.knn_search(sub_points, batch_pc, 1)
-            input_points.append(batch_pc)
-            input_neighbors.append(neighbour_idx)
-            input_pools.append(pool_i)
-            input_up_samples.append(up_i)
-            batch_pc = sub_points
-
-        input_list = input_points + input_neighbors + input_pools + input_up_samples
-        input_list += [features, batch_label, batch_pc_idx, batch_cloud_idx]
-
-        return input_list
-
     def collate_fn(self,batch):
         selected_pc, selected_labels, selected_idx, cloud_ind = [],[],[],[]
         for i in range(len(batch)):
@@ -196,3 +163,37 @@ class SemanticKITTI(torch_data.Dataset):
         inputs['cloud_inds'] = torch.from_numpy(flat_inputs[4 * num_layers + 3]).long() # (batch, 1)
 
         return inputs
+
+    @staticmethod
+    def crop_pc(points, labels, search_tree, pick_idx):
+        # crop a fixed size point cloud for training
+        center_point = points[pick_idx, :].reshape(1, -1)
+        select_idx = search_tree.query(center_point, k=ConfigSemanticKITTI.num_points)[1][0]
+        select_idx = DataProcessing.shuffle_idx(select_idx)
+        select_points = points[select_idx]
+        select_labels = labels[select_idx]
+        return select_points, select_labels, select_idx
+
+    @staticmethod
+    def tf_map(batch_pc, batch_label, batch_pc_idx, batch_cloud_idx):
+        features = batch_pc
+        input_points = []
+        input_neighbors = []
+        input_pools = []
+        input_up_samples = []
+
+        for i in range(ConfigSemanticKITTI.num_layers):
+            neighbour_idx = DataProcessing.knn_search(batch_pc, batch_pc, ConfigSemanticKITTI.k_n)
+            sub_points = batch_pc[:, :batch_pc.shape[1] // ConfigSemanticKITTI.sub_sampling_ratio[i], :]
+            pool_i = neighbour_idx[:, :batch_pc.shape[1] // ConfigSemanticKITTI.sub_sampling_ratio[i], :]
+            up_i = DataProcessing.knn_search(sub_points, batch_pc, 1)
+            input_points.append(batch_pc)
+            input_neighbors.append(neighbour_idx)
+            input_pools.append(pool_i)
+            input_up_samples.append(up_i)
+            batch_pc = sub_points
+
+        input_list = input_points + input_neighbors + input_pools + input_up_samples
+        input_list += [features, batch_label, batch_pc_idx, batch_cloud_idx]
+
+        return input_list
