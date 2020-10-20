@@ -35,9 +35,9 @@ def viewer(data_path):
         pointcloud_path = pointcloud_list[index]
         label_path = label_list[index]
 
-
-        pointcloud = DataProcessing.load_pointcloud_semantickitti(pointcloud_path)
-        label = DataProcessing.load_label_semantickitti(label_path, remap_lut)
+        pointcloud = DataProcessing.load_pc_kitti(pointcloud_path)
+        label = DataProcessing.load_label_kitti(label_path, remap_lut)
+        
         pointcloud_withlabel = np.zeros((pointcloud.shape[0], 6), dtype=np.int)
         pointcloud_withlabel[:,0:3] = pointcloud
         pointcloud_withlabel[:,5] = 1

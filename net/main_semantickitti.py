@@ -106,6 +106,7 @@ class network:
             # Forward pass
             self.optimizer.zero_grad()
             self.out = self.net(xyz, neigh_idx, sub_idx, interp_idx, features, labels, input_inds, cloud_inds)
+            
             self.loss, self.end_points['valid_logits'], self.end_points['valid_labels'] = compute_loss(self.out, labels, self.config)
             self.end_points['loss'] = self.loss
             # self.writer.add_graph(self.net, input_to_model=[xyz, neigh_idx, sub_idx, interp_idx, features, labels, input_inds, cloud_inds])
