@@ -276,11 +276,14 @@ class network:
                 pick_idx = np.random.choice(len(points), 1)
                 print(pick_idx)
                 selected_pc_, selected_labels_, selected_idx_, cloud_ind_ = [],[],[],[]
-                selected_pc, selected_labels, selected_idx = SemanticKITTI.crop_pc(points, labels, search_tree, pick_idx)
-                
-                selected_pc = selected_pc.astype(np.float32)
-                selected_labels = selected_labels.astype(np.int32)
-                selected_idx = selected_idx.astype(np.int32)
+                # selected_pc, selected_labels, selected_idx = SemanticKITTI.crop_pc(points, labels, search_tree, pick_idx)
+                # selected_pc = selected_pc.astype(np.float32)
+                # selected_labels = selected_labels.astype(np.int32)
+                # selected_idx = selected_idx.astype(np.int32)
+
+                selected_pc = points.astype(np.float32)
+                selected_labels = labels.astype(np.int32)
+                selected_idx = pick_idx.astype(np.int32)
 
                 selected_pc_.append(selected_pc) # (N,3)
                 selected_labels_.append(selected_labels) # (N,)
@@ -324,15 +327,8 @@ class network:
                 
                 with torch.no_grad():
                     self.out = self.net(xyz, neigh_idx, sub_idx, interp_idx, features, labels, input_inds, cloud_inds)
-                    # print(self.out.argmax(dim=1).shape)
-                    # print(labels.shape)
-                    # print(self.out.shape)
-                    # labels = DataProcessing.load_label_kitti(os.path.join(label_path, str(scan_id[:-4]) + '.label'), remap_lut)
-                    print(points.shape)
-                    print(xyz[0].squeeze().cpu().numpy().shape)
-
                     Plot.draw_pointcloud(xyz[0].squeeze().cpu().numpy(), "pointcloud:{}".format(scan_id[:-4]))
-                    # Plot.draw_pointcloud_semantic_instance(points, self.out.cpu(), "pointcloud_label:{}".format(scan_id[:-4]))
+                    Plot.draw_pointcloud_semantic_instance(xyz[0].squeeze().cpu().numpy(), self.out.argmax(dim=1).cpu().numpy().squeeze(), "pointcloud_label:{}".format(scan_id[:-4]))
 
 
     def run(self):
