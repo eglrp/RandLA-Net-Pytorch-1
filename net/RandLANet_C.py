@@ -25,17 +25,6 @@ import net.net_utils as net_utils
 from dataset.dataprocessing import DataProcessing
 
 
-def weight_init(m):
-    if isinstance(m, nn.Linear):
-        nn.init.xavier_normal_(m.weight)
-        m.bias.data.fill_(0.00)
-    elif isinstance(m, nn.Conv2d):
-        nn.init.xavier_normal_(m.weight)
-    elif isinstance(m, nn.BatchNorm2d):
-        m.weight.data.fill_(1.00)
-        m.bias.data.fill_(0.00)
-
-
 class SharedMLP(nn.Sequential):
     def __init__(self, args, bn, activation=True):
         super(SharedMLP, self).__init__()
@@ -59,7 +48,7 @@ class Att_pooling(nn.Module):
     def __init__(self, d_in, d_out):
         super().__init__()
         self.fc = nn.Conv2d(d_in, d_in, (1, 1), bias=False)
-        self.mlp = SharedMLP([d_in, d_out], bn=True)
+        self.mlp = net_utils.Conv2d(d_in, d_out, kernel_size=(1, 1), bn=True)
 
     def forward(self, feature_set):
         # semantickitti: (16,8),(64,32),(128,64),(256,128)
@@ -76,12 +65,18 @@ class Building_block(nn.Module):
     def __init__(self, d_out):  #  d_in = d_out//2
         super().__init__()
         # semantickitti: 16,64,128,256
-        self.mlp1 = SharedMLP([10, d_out // 2], bn=True)
+        self.mlp1 = net_utils.Conv2d(10,
+                                     d_out // 2,
+                                     kernel_size=(1, 1),
+                                     bn=True)
         # semantickitti: (10,8), (10,32), (10,64), (10,128)
         self.att_pooling_1 = Att_pooling(d_out, d_out // 2)
         # semantickitti: (16,8),(64,32),(128,64),(256,128)
 
-        self.mlp2 = SharedMLP([d_out // 2, d_out // 2], bn=True)
+        self.mlp2 = net_utils.Conv2d(d_out // 2,
+                                     d_out // 2,
+                                     kernel_size=(1, 1),
+                                     bn=True)
         self.att_pooling_2 = Att_pooling(d_out, d_out)
 
     def forward(self, xyz, feature,
@@ -144,11 +139,22 @@ class Dilated_res_block(nn.Module):
         super().__init__()
 
         # semantickitti: (8,16), (32,64), (128,128), (256,256)
-        self.mlp1 = SharedMLP([d_in, d_out // 2], bn=True)
+        self.mlp1 = net_utils.Conv2d(d_in,
+                                     d_out // 2,
+                                     kernel_size=(1, 1),
+                                     bn=True)
         # semantickitti: (8,8), (32,32), (128,64), (256,128)
         self.lfa = Building_block(d_out)
-        self.mlp2 = SharedMLP([d_out, d_out * 2], bn=True, activation=None)
-        self.shortcut = SharedMLP([d_in, d_out * 2], bn=True, activation=None)
+        self.mlp2 = net_utils.Conv2d(d_out,
+                                     d_out * 2,
+                                     kernel_size=(1, 1),
+                                     bn=True,
+                                     activation=None)
+        self.shortcut = net_utils.Conv2d(d_in,
+                                         d_out * 2,
+                                         kernel_size=(1, 1),
+                                         bn=True,
+                                         activation=None)
 
     def forward(self, feature, xyz, neigh_idx):
         f_pc = self.mlp1(feature)  # Batch*channel*npoints*1
@@ -158,9 +164,9 @@ class Dilated_res_block(nn.Module):
         return F.leaky_relu(f_pc + shortcut, negative_slope=0.2)
 
 
-class RandLANET(nn.Module):
+class RandLANET_C(nn.Module):
     def __init__(self, dataset_name, config):
-        super(RandLANET, self).__init__()
+        super(RandLANET_C, self).__init__()
         self.config = config
         self.class_weights = DataProcessing.get_class_weights(dataset_name)
 
@@ -176,7 +182,10 @@ class RandLANET(nn.Module):
             d_in = 2 * d_out
 
         d_out = d_in
-        self.decoder_0 = SharedMLP([d_in, d_out], bn=True)
+        self.decoder_0 = net_utils.Conv2d(d_in,
+                                          d_out,
+                                          kernel_size=(1, 1),
+                                          bn=True)
 
         self.decoder_blocks = nn.ModuleList()
         for j in range(self.config.num_layers):
@@ -187,14 +196,17 @@ class RandLANET(nn.Module):
             else:
                 d_in = self.config.d_out[-j - 1] * 2 + 2 * self.config.d_out[0]
                 d_out = 2 * self.config.d_out[0]
-            self.decoder_blocks.append(SharedMLP([d_in, d_out], bn=True))
+            self.decoder_blocks.append(
+                net_utils.Conv2d(d_in, d_out, kernel_size=(1, 1), bn=True))
 
-        self.fc1 = SharedMLP([d_out, 64], bn=True)
-        self.fc2 = SharedMLP([64, 32], bn=True)
+        self.fc1 = net_utils.Conv2d(d_out, 64, kernel_size=(1, 1), bn=True)
+        self.fc2 = net_utils.Conv2d(64, 32, kernel_size=(1, 1), bn=True)
         self.dropout = nn.Dropout(0.5)
-        self.fc3 = SharedMLP([32, self.config.num_classes],
-                             bn=False,
-                             activation=None)
+        self.fc3 = net_utils.Conv2d(32,
+                                    self.config.num_classes,
+                                    kernel_size=(1, 1),
+                                    bn=False,
+                                    activation=None)
 
     def random_sample(self, feature, pool_idx):
         """
@@ -283,6 +295,8 @@ class RandLANET(nn.Module):
         features = self.dropout(features)
         features = self.fc3(features)
         f_out = features.squeeze(3)
+        f_out = torch.max(f_out, 2)[0]
+        f_out = F.log_softmax(f_out, -1)
         return f_out
 
     def forward(self, xyz, neigh_idx, sub_idx, interp_idx, features, labels,
@@ -307,35 +321,38 @@ def get_loss(logits, labels, pre_cal_weights):
 
 
 def compute_loss(logits, labels, cfg):
+    labels = torch.LongTensor([labels.cpu().numpy()[0][0]]).cuda()
+    total_loss = F.nll_loss(logits, labels)
+    return total_loss
     # logits = end_points['logits']
     # labels = end_points['labels']
 
-    logits = logits.transpose(1, 2).reshape(-1, cfg.num_classes)
-    labels = labels.reshape(-1)
+    # logits = logits.transpose(1, 2).reshape(-1, cfg.num_classes)
+    # labels = labels.reshape(-1)
 
-    # Boolean mask of points that should be ignored
-    ignored_bool = labels == 0
-    for ign_label in cfg.ignored_label_inds:
-        ignored_bool = ignored_bool | (labels == ign_label)
+    # # Boolean mask of points that should be ignored
+    # ignored_bool = labels == 0
+    # for ign_label in cfg.ignored_label_inds:
+    #     ignored_bool = ignored_bool | (labels == ign_label)
 
-    # Collect logits and labels that are not ignored
-    valid_idx = ignored_bool == 0
-    valid_logits = logits[valid_idx, :]
-    valid_labels_init = labels[valid_idx]
+    # # Collect logits and labels that are not ignored
+    # valid_idx = ignored_bool == 0
+    # valid_logits = logits[valid_idx, :]
+    # valid_labels_init = labels[valid_idx]
 
-    # Reduce label values in the range of logit shape
-    reducing_list = torch.arange(0, cfg.num_classes).long().cuda()
-    inserted_value = torch.zeros((1, )).long().cuda()
-    for ign_label in cfg.ignored_label_inds:
-        reducing_list = torch.cat([
-            reducing_list[:ign_label], inserted_value,
-            reducing_list[ign_label:]
-        ], 0)
-    valid_labels = torch.gather(reducing_list, 0, valid_labels_init)
-    loss = get_loss(valid_logits, valid_labels, cfg.class_weights)
+    # # Reduce label values in the range of logit shape
+    # reducing_list = torch.arange(0, cfg.num_classes).long().cuda()
+    # inserted_value = torch.zeros((1, )).long().cuda()
+    # for ign_label in cfg.ignored_label_inds:
+    #     reducing_list = torch.cat([
+    #         reducing_list[:ign_label], inserted_value,
+    #         reducing_list[ign_label:]
+    #     ], 0)
+    # valid_labels = torch.gather(reducing_list, 0, valid_labels_init)
+    # loss = get_loss(valid_logits, valid_labels, cfg.class_weights)
     # end_points['valid_logits'], end_points['valid_labels'] = valid_logits, valid_labels
     # end_points['loss'] = loss
-    return loss, valid_logits, valid_labels
+    # return loss, valid_logits, valid_labels
 
 
 def compute_acc(logits, labels):

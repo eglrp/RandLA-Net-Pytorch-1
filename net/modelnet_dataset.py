@@ -20,28 +20,54 @@ sys.path.append(root_dir)
 
 from utils.ply import read_ply
 from dataset.dataprocessing import DataProcessing
-from config.config_s3dis import ConfigS3DIS
+from config.config_modelnet import ConfigMODELNET
 
 
-class S3DIS(torch_data.Dataset):
-    def __init__(self, mode, test_area_idx=5):
-        self.name = 'S3DIS'
+class MODELNET(torch_data.Dataset):
+    def __init__(self, mode):
         self.mode = mode
-        self.path = os.path.join(root_dir, 'data/s3dis')
+        self.path = os.path.join(root_dir, 'data/modelnet')
         self.label_to_names = {
-            0: 'ceiling',
-            1: 'floor',
-            2: 'wall',
-            3: 'beam',
-            4: 'column',
-            5: 'window',
-            6: 'door',
-            7: 'table',
+            0: 'airplane',
+            1: 'bathtub',
+            2: 'bed',
+            3: 'bench',
+            4: 'bookshelf',
+            5: 'bottle',
+            6: 'bowl',
+            7: 'car',
             8: 'chair',
-            9: 'sofa',
-            10: 'bookcase',
-            11: 'board',
-            12: 'clutter'
+            9: 'cone',
+            10: 'cup',
+            11: 'curtain',
+            12: 'desk',
+            13: 'door',
+            14: 'dresser',
+            15: 'flower_pot',
+            16: 'glass_box',
+            17: 'guitar',
+            18: 'keyboard',
+            19: 'lamp',
+            20: 'laptop',
+            21: 'mantel',
+            22: 'monitor',
+            23: 'night_stand',
+            24: 'person',
+            25: 'piano',
+            26: 'plant',
+            27: 'radio',
+            28: 'range_hood',
+            29: 'sink',
+            30: 'sofa',
+            31: 'stairs',
+            32: 'stool',
+            33: 'table',
+            34: 'tent',
+            35: 'toilet',
+            36: 'tv_stand',
+            37: 'vase',
+            38: 'wardrobe',
+            39: 'xbox'
         }
         self.num_classes = len(self.label_to_names)
         self.label_values = np.sort(
@@ -49,101 +75,86 @@ class S3DIS(torch_data.Dataset):
         self.label_to_idx = {l: i for i, l in enumerate(self.label_values)}
         self.ignored_labels = np.array([])
 
-        self.val_split = 'Area_' + str(test_area_idx)
-        self.all_files = glob.glob(
-            os.path.join(self.path, 'original_ply', '*.ply'))
+        self.possibility = {'train': [], 'test': []}
+        self.min_possibility = {'train': [], 'test': []}
+        self.input_trees = {'train': [], 'test': []}
+        self.input_colors = {'train': [], 'test': []}
+        self.input_labels = {'train': [], 'test': []}
+        self.input_names = {'train': [], 'test': []}
 
-        # Initiate containers
-        self.val_proj = []
-        self.val_labels = []
-        self.possibility = {'training': [], 'validation': []}
-        self.min_possibility = {'training': [], 'validation': []}
-        self.input_trees = {'training': [], 'validation': []}
-        self.input_colors = {'training': [], 'validation': []}
-        self.input_labels = {'training': [], 'validation': []}
-        self.input_names = {'training': [], 'validation': []}
-
-        ConfigS3DIS.ignored_label_inds = [
-            self.label_to_idx[ign_label] for ign_label in self.ignored_labels
+        self.cat = [
+            line.rstrip() for line in open(
+                os.path.join(
+                    self.path,
+                    'modelnet40_normal_resampled/modelnet40_shape_names.txt'))
         ]
-        ConfigS3DIS.class_weights = DataProcessing.get_class_weights('S3DIS')
-        self.load_sub_sampled_clouds(ConfigS3DIS.sub_grid_size, self.mode)
+        self.classes = dict(zip(self.cat, range(len(self.cat))))
+        self.shape_ids = {}
+        self.shape_ids['train'] = [
+            line.rstrip() for line in open(
+                os.path.join(
+                    self.path,
+                    'modelnet40_normal_resampled/modelnet40_train.txt'))
+        ]
+        self.shape_ids['test'] = [
+            line.rstrip() for line in open(
+                os.path.join(
+                    self.path,
+                    'modelnet40_normal_resampled/modelnet40_test.txt'))
+        ]
+
+        assert (mode == 'train' or mode == 'test')
+        self.shape_names = [
+            '_'.join(x.split('_')[0:-1]) for x in self.shape_ids[mode]
+        ]
+        self.datapath = [
+            (self.shape_names[i],
+             os.path.join(self.path, 'modelnet40_normal_resampled',
+                          self.shape_names[i], self.shape_ids[mode][i]) +
+             '.txt') for i in range(len(self.shape_ids[mode]))
+        ]
+        print('The size of %s data is %d' % (mode, len(self.datapath)))
+        # print(
+        #     os.path.join(
+        #         self.path, 'original_ply', 'modelnet40_normal_resampled_' +
+        #         self.shape_ids[mode][0] + '.ply'))
+        # self.all_files = glob.glob(
+        #     os.path.join(self.path, 'original_ply', '*.ply'))
+        self.all_files = [
+            os.path.join(
+                self.path, 'original_ply', 'modelnet40_normal_resampled_' +
+                self.shape_ids[mode][i] + '.ply')
+            for i in range(len(self.shape_ids[mode]))
+        ]
+        self.load_sub_sampled_clouds(0.06, mode)
 
     def load_sub_sampled_clouds(self, sub_grid_size, mode):
         tree_path = os.path.join(self.path,
                                  'input_{:.3f}'.format(sub_grid_size))
         for i, file_path in enumerate(self.all_files):
-            t0 = time.time()
+            print(i)
             cloud_name = file_path.split('/')[-1][:-4]
-            if self.val_split in cloud_name:
-                cloud_split = 'validation'
-            else:
-                cloud_split = 'training'
-
-            # Name of the input files
             kd_tree_file = os.path.join(tree_path,
                                         '{:s}_KDTree.pkl'.format(cloud_name))
             sub_ply_file = os.path.join(tree_path,
                                         '{:s}.ply'.format(cloud_name))
-
             data = read_ply(sub_ply_file)
             sub_colors = np.vstack(
                 (data['red'], data['green'], data['blue'])).T
             sub_labels = data['class']
-
-            # Read pkl with search tree
             with open(kd_tree_file, 'rb') as f:
                 search_tree = pickle.load(f)
 
-            self.input_trees[cloud_split] += [search_tree]
-            self.input_colors[cloud_split] += [sub_colors]
-            self.input_labels[cloud_split] += [sub_labels]
-            self.input_names[cloud_split] += [cloud_name]
-
-            size = sub_colors.shape[0] * 4 * 7
-            print('{:s} {:.1f} MB loaded in {:.1f}s'.format(
-                kd_tree_file.split('/')[-1], size * 1e-6,
-                time.time() - t0))
-        print('\nPreparing reprojected indices for testing')
-
-        # Get validation and test reprojected indices
-        for i, file_path in enumerate(self.all_files):
-            t0 = time.time()
-            cloud_name = file_path.split('/')[-1][:-4]
-
-            # Validation projection and labels
-            if self.val_split in cloud_name:
-                proj_file = os.path.join(tree_path,
-                                         '{:s}_project.pkl'.format(cloud_name))
-                with open(proj_file, 'rb') as f:
-                    proj_idx, labels = pickle.load(f)
-                self.val_proj += [proj_idx]
-                self.val_labels += [labels]
-                print('{:s} done in {:.1f}s'.format(cloud_name,
-                                                    time.time() - t0))
+            self.input_trees[mode] += [search_tree]
+            self.input_colors[mode] += [sub_colors]
+            self.input_labels[mode] += [sub_labels]
+            self.input_names[mode] += [cloud_name]
 
         for i, tree in enumerate(self.input_colors[mode]):
             self.possibility[mode].append(
                 np.random.rand(tree.data.shape[0]) * 1e-3)  # (0,0.001)
             self.min_possibility[mode].append(
                 float(np.min(self.possibility[mode][-1])))
-
-    def __len__(self):
-        if self.mode == 'training':
-            return len(self.input_trees['training'])
-        elif self.mode == 'validation':
-            return len(self.input_trees['validation'])
-
-    def __getitem__(self, item):
-        queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx = self.spatially_regular_gen(
-            item)
-
-        print('queried_pc_xyz', queried_pc_xyz)
-        print('queried_pc_colors', queried_pc_colors)
-        print('queried_pc_labels', queried_pc_labels)
-        print('queried_idx', queried_idx)
-        print('queried_cloud_idx', queried_cloud_idx)
-        return queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx
 
     def spatially_regular_gen(self, item):
         # Generator loop
@@ -156,18 +167,17 @@ class S3DIS(torch_data.Dataset):
         # Center point of input region
         center_point = points[point_ind, :].reshape(1, -1)
         # Add noise to the center point
-        noise = np.random.normal(scale=ConfigS3DIS.noise_init / 10,
-                                 size=center_point.shape)
+        noise = np.random.normal(scale=3.5 / 10, size=center_point.shape)
         pick_point = center_point + noise.astype(center_point.dtype)
         # Check if the number of points in the selected cloud is less than the predefined num_points
-        if len(points) < ConfigS3DIS.num_points:
+        if len(points) < ConfigMODELNET.num_points:
             # Query all points within the cloud
             queried_idx = self.input_trees[self.mode][cloud_idx].query(
                 pick_point, k=len(points))[1][0]
         else:
             # Query the predefined number of points
             queried_idx = self.input_trees[self.mode][cloud_idx].query(
-                pick_point, k=ConfigS3DIS.num_points)[1][0]
+                pick_point, k=40960)[1][0]
 
         # Shuffle index
         queried_idx = DataProcessing.shuffle_idx(queried_idx)
@@ -189,9 +199,9 @@ class S3DIS(torch_data.Dataset):
             np.min(self.possibility[self.mode][cloud_idx]))
 
         # up_sampled with replacement
-        if len(points) < ConfigS3DIS.num_points:
+        if len(points) < ConfigMODELNET.num_points:
             queried_pc_xyz, queried_pc_colors, queried_idx, queried_pc_labels = \
-                DataProcessing.data_aug(queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, ConfigS3DIS.num_points)
+                DataProcessing.data_aug(queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, ConfigMODELNET.num_points)
 
         return queried_pc_xyz.astype(np.float32), queried_pc_colors.astype(
             np.float32), queried_pc_labels, queried_idx.astype(
@@ -205,16 +215,16 @@ class S3DIS(torch_data.Dataset):
         input_pools = []
         input_up_samples = []
 
-        for i in range(ConfigS3DIS.num_layers):
+        for i in range(ConfigMODELNET.num_layers):
             # print('queried_pc_xyz shape:',batch_xyz.shape) # (1, N, 3)
             neighbour_idx = DataProcessing.knn_search(batch_xyz, batch_xyz,
-                                                      ConfigS3DIS.k_n)
+                                                      ConfigMODELNET.k_n)
             # print('neighbour_idx shape:', neighbour_idx.shape) # (1, N, 16)
             sub_points = batch_xyz[:, :batch_xyz.shape[1] //
-                                   ConfigS3DIS.sub_sampling_ratio[i], :]
+                                   ConfigMODELNET.sub_sampling_ratio[i], :]
             # print('sub_points shape:', sub_points.shape) # (1, N, 16)
             pool_i = neighbour_idx[:, :batch_xyz.shape[1] //
-                                   ConfigS3DIS.sub_sampling_ratio[i], :]
+                                   ConfigMODELNET.sub_sampling_ratio[i], :]
             up_i = DataProcessing.knn_search(sub_points, batch_xyz, 1)
             input_points.append(batch_xyz)
             input_neighbors.append(neighbour_idx)
@@ -247,7 +257,7 @@ class S3DIS(torch_data.Dataset):
                                   queried_pc_labels, queried_idx,
                                   queried_cloud_idx)
 
-        num_layers = ConfigS3DIS.num_layers
+        num_layers = ConfigMODELNET.num_layers
         inputs = {}
         inputs['xyz'] = []
         for tmp in flat_inputs[:num_layers]:
@@ -270,3 +280,14 @@ class S3DIS(torch_data.Dataset):
         inputs['cloud_inds'] = torch.from_numpy(flat_inputs[4 * num_layers +
                                                             3]).long()
         return inputs
+
+    def __len__(self):
+        return len(self.datapath)
+
+    def __getitem__(self, item):
+        queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx = self.spatially_regular_gen(
+            item)
+        return queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx
+
+
+s = MODELNET('train')

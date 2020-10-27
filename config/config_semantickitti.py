@@ -1,5 +1,6 @@
 #! ~/.miniconda3/envs/pytorch/bin/python
 
+
 class ConfigSemanticKITTI:
     channels = 3
     k_n = 16  # KNN
@@ -8,14 +9,17 @@ class ConfigSemanticKITTI:
     num_classes = 19  # Number of valid classes
     sub_grid_size = 0.06  # preprocess_parameter
 
-    batch_size = 6  # batch_size during training
+    batch_size = 1  # batch_size during training
     val_batch_size = 20  # batch_size during validation and test
     train_steps = 500  # Number of steps per epochs
     val_steps = 100  # Number of validation steps per epoch
 
-    sub_sampling_ratio = [4, 4, 4, 4]  # sampling ratio of random sampling at each layer
+    sub_sampling_ratio = [4, 4, 4,
+                          4]  # sampling ratio of random sampling at each layer
     d_out = [16, 64, 128, 256]  # feature dimension
-    num_sub_points = [num_points // 4, num_points // 16, num_points // 64, num_points // 256]
+    num_sub_points = [
+        num_points // 4, num_points // 16, num_points // 64, num_points // 256
+    ]
 
     noise_init = 3.5  # noise initial parameter
     max_epoch = 400  # maximum epoch during training
