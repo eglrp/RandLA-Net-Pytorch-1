@@ -8,7 +8,6 @@ import colorsys
 import numpy as np
 import pandas as pd
 
-
 base_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(base_dir)
 utils_dir = os.path.join(root_dir, 'utils')
@@ -20,16 +19,23 @@ from utils.nearest_neighbors.lib.python import nearest_neighbors
 from utils.cpp_wrappers.cpp_subsampling import grid_subsampling
 from knn_cuda import KNN
 
+
 class DataProcessing:
     @staticmethod
     def load_pc_semantic3d(filename):
-        pc_pd = pd.read_csv(filename, header=None, delim_whitespace=True, dtype=np.float16)
+        pc_pd = pd.read_csv(filename,
+                            header=None,
+                            delim_whitespace=True,
+                            dtype=np.float16)
         pc = pc_pd.values
         return pc
 
     @staticmethod
     def load_label_semantic3d(filename):
-        label_pd = pd.read_csv(filename, header=None, delim_whitespace=True, dtype=np.uint8)
+        label_pd = pd.read_csv(filename,
+                               header=None,
+                               delim_whitespace=True,
+                               dtype=np.uint8)
         cloud_labels = label_pd.values
         return cloud_labels
 
@@ -55,10 +61,13 @@ class DataProcessing:
         seq_list = np.sort(os.listdir(dataset_path))
         file_list = []
         for seq_index in seq_list:
-            if(int(seq_index)<11):
+            if (int(seq_index) < 11):
                 seq_path = os.path.join(dataset_path, seq_index)
                 pointcloud_path = os.path.join(seq_path, 'velodyne')
-                file_list.append([os.path.join(pointcloud_path, file) for file in np.sort(os.listdir(pointcloud_path))])
+                file_list.append([
+                    os.path.join(pointcloud_path, file)
+                    for file in np.sort(os.listdir(pointcloud_path))
+                ])
         return np.concatenate(file_list, axis=0)
 
     @staticmethod
@@ -66,10 +75,13 @@ class DataProcessing:
         seq_list = np.sort(os.listdir(dataset_path))
         file_list = []
         for seq_index in seq_list:
-            if(int(seq_index)<11):
+            if (int(seq_index) < 11):
                 seq_path = os.path.join(dataset_path, seq_index)
                 label_path = os.path.join(seq_path, 'labels')
-                file_list.append([os.path.join(label_path, file) for file in np.sort(os.listdir(label_path))])
+                file_list.append([
+                    os.path.join(label_path, file)
+                    for file in np.sort(os.listdir(label_path))
+                ])
         return np.concatenate(file_list, axis=0)
 
     @staticmethod
@@ -83,13 +95,27 @@ class DataProcessing:
             seq_path = os.path.join(dataset_path, seq_id)
             pc_path = os.path.join(seq_path, 'velodyne')
             if seq_id == '08':
-                val_file_list.append([os.path.join(pc_path, f) for f in np.sort(os.listdir(pc_path))])
+                val_file_list.append([
+                    os.path.join(pc_path, f)
+                    for f in np.sort(os.listdir(pc_path))
+                ])
                 if seq_id == test_scan_num:
-                    test_file_list.append([os.path.join(pc_path, f) for f in np.sort(os.listdir(pc_path))])
+                    test_file_list.append([
+                        os.path.join(pc_path, f)
+                        for f in np.sort(os.listdir(pc_path))
+                    ])
             elif int(seq_id) >= 11 and seq_id == test_scan_num:
-                test_file_list.append([os.path.join(pc_path, f) for f in np.sort(os.listdir(pc_path))])
-            elif seq_id in ['00', '01', '02', '03', '04', '05', '06', '07', '09', '10']:
-                train_file_list.append([os.path.join(pc_path, f) for f in np.sort(os.listdir(pc_path))])
+                test_file_list.append([
+                    os.path.join(pc_path, f)
+                    for f in np.sort(os.listdir(pc_path))
+                ])
+            elif seq_id in [
+                    '00', '01', '02', '03', '04', '05', '06', '07', '09', '10'
+            ]:
+                train_file_list.append([
+                    os.path.join(pc_path, f)
+                    for f in np.sort(os.listdir(pc_path))
+                ])
 
         train_file_list = np.concatenate(train_file_list, axis=0)
         val_file_list = np.concatenate(val_file_list, axis=0)
@@ -141,7 +167,11 @@ class DataProcessing:
         return data_list
 
     @staticmethod
-    def grid_sub_sampling(points, features=None, labels=None, grid_size=0.1, verbose=0):
+    def grid_sub_sampling(points,
+                          features=None,
+                          labels=None,
+                          grid_size=0.1,
+                          verbose=0):
         """
         CPP wrapper for a grid sub_sampling (method = barycenter for points and features
         :param points: (N, 3) matrix of input points
@@ -153,14 +183,26 @@ class DataProcessing:
         """
 
         if (features is None) and (labels is None):
-            return grid_subsampling.compute(points, sampleDl=grid_size, verbose=verbose)
+            return grid_subsampling.compute(points,
+                                            sampleDl=grid_size,
+                                            verbose=verbose)
         elif labels is None:
-            return grid_subsampling.compute(points, features=features, sampleDl=grid_size, verbose=verbose)
+            return grid_subsampling.compute(points,
+                                            features=features,
+                                            sampleDl=grid_size,
+                                            verbose=verbose)
         elif features is None:
-            return grid_subsampling.compute(points, classes=labels, sampleDl=grid_size, verbose=verbose)
+            return grid_subsampling.compute(points,
+                                            classes=labels,
+                                            sampleDl=grid_size,
+                                            verbose=verbose)
         else:
-            return grid_subsampling.compute(points, features=features, classes=labels, sampleDl=grid_size,
-                                           verbose=verbose)
+            return grid_subsampling.compute(points,
+                                            features=features,
+                                            classes=labels,
+                                            sampleDl=grid_size,
+                                            verbose=verbose)
+
     @staticmethod
     def IoU_from_confusions(confusions):
         """
@@ -193,15 +235,23 @@ class DataProcessing:
         # pre-calculate the number of points in each category
         num_per_class = []
         if dataset_name is 'S3DIS':
-            num_per_class = np.array([3370714, 2856755, 4919229, 318158, 375640, 478001, 974733,
-                                      650464, 791496, 88727, 1284130, 229758, 2272837], dtype=np.int32)
+            num_per_class = np.array([
+                3370714, 2856755, 4919229, 318158, 375640, 478001, 974733,
+                650464, 791496, 88727, 1284130, 229758, 2272837
+            ],
+                                     dtype=np.int32)
         elif dataset_name is 'Semantic3D':
-            num_per_class = np.array([5181602, 5012952, 6830086, 1311528, 10476365, 946982, 334860, 269353],
+            num_per_class = np.array([
+                5181602, 5012952, 6830086, 1311528, 10476365, 946982, 334860,
+                269353
+            ],
                                      dtype=np.int32)
         elif dataset_name is 'SemanticKITTI':
-            num_per_class = np.array([55437630, 320797, 541736, 2578735, 3274484, 552662, 184064, 78858,
-                                      240942562, 17294618, 170599734, 6369672, 230413074, 101130274, 476491114,
-                                      9833174, 129609852, 4506626, 1168181])
+            num_per_class = np.array([
+                55437630, 320797, 541736, 2578735, 3274484, 552662, 184064,
+                78858, 240942562, 17294618, 170599734, 6369672, 230413074,
+                101130274, 476491114, 9833174, 129609852, 4506626, 1168181
+            ])
         weight = num_per_class / float(sum(num_per_class))
         ce_label_weight = 1 / (weight + 0.02)
         return np.expand_dims(ce_label_weight, axis=0)
