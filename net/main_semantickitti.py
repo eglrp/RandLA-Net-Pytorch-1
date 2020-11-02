@@ -83,6 +83,7 @@ class network:
 
         self.end_points = {}
         self.FLAGS = FLAGS
+        self.mIou_list = [0]
 
     def mkdir_log(self, out_path):
         if not os.path.exists(out_path):
@@ -191,7 +192,6 @@ class network:
         self.writer.close()
 
     def evaluate_one_epoch(self, epoch_count):
-        self.current_loss = None
         self.net.eval()  # set model to eval mode (for bn and dp)
         iou_calc = IoUCalculator(self.config)
         for batch_idx, batch_data in enumerate(self.test_dataloader):
@@ -263,13 +263,10 @@ class network:
         log_out(s, self.f_out)
         self.writer.close()
 
-        current_loss = self.stat_dict['loss'] / (float(batch_idx + 1))
-        return current_loss
+        return mean_iou
 
     def train(self, start_epoch):
         loss = 0
-        min_loss = 100
-        current_loss = None
         for epoch in range(start_epoch, self.FLAGS.max_epoch):
             log_out('**************** EPOCH %03d ****************' % (epoch),
                     self.f_out)
@@ -277,10 +274,14 @@ class network:
             np.random.seed()
             self.train_one_epoch(epoch)
 
-            if epoch == 0 or epoch % 10 == 9:
-                log_out('**** EVAL EPOCH %03d START****' % (epoch), self.f_out)
-                current_loss = self.evaluate_one_epoch(epoch)
-                log_out('**** EVAL EPOCH %03d END****' % (epoch), self.f_out)
+            save_flag = False
+            # if epoch == 0 or epoch % 10 == 9:
+            log_out('**** EVAL EPOCH %03d START****' % (epoch), self.f_out)
+            mean_iou = self.evaluate_one_epoch(epoch)
+            if mean_iou > np.max(self.mIou_list):
+                save_flag = True
+            self.mIou_list.append(mean_iou)
+            log_out('**** EVAL EPOCH %03d END****' % (epoch), self.f_out)
 
             save_dict = {
                 'epoch': epoch +
@@ -294,13 +295,13 @@ class network:
             except:
                 save_dict['model_state_dict'] = self.net.state_dict()
 
-            torch.save(
-                save_dict,
-                os.path.join(self.FLAGS.log_dir,
-                             'semantickitti_checkpoint.tar'))
+            if save_flag:
+                torch.save(
+                    save_dict,
+                    os.path.join(self.FLAGS.log_dir,
+                                 'semantickitti_checkpoint.tar'))
 
     def run(self):
-        it = -1
         start_epoch = 0
         checkpoint_path = self.FLAGS.checkpoint_path
         if checkpoint_path is not None and os.path.isfile(checkpoint_path):

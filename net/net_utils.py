@@ -179,6 +179,38 @@ class Conv2d(_ConvBase):
                          instance_norm_func=nn.InstanceNorm2d)
 
 
+class Conv2d_Transpose(_ConvBase):
+    def __init__(self,
+                 in_size: int,
+                 out_size: int,
+                 *,
+                 kernel_size: Tuple[int, int] = (1, 1),
+                 stride: Tuple[int, int] = (1, 1),
+                 padding: Tuple[int, int] = (0, 0),
+                 activation=nn.LeakyReLU(negative_slope=0.2, inplace=True),
+                 bn: bool = False,
+                 init=nn.init.kaiming_normal_,
+                 bias: bool = True,
+                 preact: bool = False,
+                 name: str = "",
+                 instance_norm=False):
+        super().__init__(in_size,
+                         out_size,
+                         kernel_size,
+                         stride,
+                         padding,
+                         activation,
+                         bn,
+                         init,
+                         conv=nn.ConvTranspose2d,
+                         batch_norm=BatchNorm2d,
+                         bias=bias,
+                         preact=preact,
+                         name=name,
+                         instance_norm=instance_norm,
+                         instance_norm_func=nn.InstanceNorm2d)
+
+
 class FC(nn.Sequential):
     def __init__(self,
                  in_size: int,

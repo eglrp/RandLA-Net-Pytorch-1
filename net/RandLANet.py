@@ -26,14 +26,42 @@ from dataset.dataprocessing import DataProcessing
 
 
 def weight_init(m):
-    if isinstance(m, nn.Linear):
-        nn.init.xavier_normal_(m.weight)
-        m.bias.data.fill_(0.00)
+    if isinstance(m, nn.Conv1d):
+        nn.init.normal_(m.weight.data)
+        if m.bias is not None:
+            nn.init.normal_(m.bias.data)
     elif isinstance(m, nn.Conv2d):
-        nn.init.xavier_normal_(m.weight)
+        nn.init.xavier_normal_(m.weight.data)
+        if m.bias is not None:
+            nn.init.normal_(m.bias.data)
+    elif isinstance(m, nn.Conv3d):
+        nn.init.xavier_normal_(m.weight.data)
+        if m.bias is not None:
+            nn.init.normal_(m.bias.data)
+    elif isinstance(m, nn.ConvTranspose1d):
+        nn.init.normal_(m.weight.data)
+        if m.bias is not None:
+            nn.init.normal_(m.bias.data)
+    elif isinstance(m, nn.ConvTranspose2d):
+        nn.init.xavier_normal_(m.weight.data)
+        if m.bias is not None:
+            nn.init.normal_(m.bias.data)
+    elif isinstance(m, nn.ConvTranspose3d):
+        nn.init.xavier_normal_(m.weight.data)
+        if m.bias is not None:
+            nn.init.normal_(m.bias.data)
+    elif isinstance(m, nn.BatchNorm1d):
+        nn.init.normal_(m.weight.data, mean=1, std=0.02)
+        nn.init.constant_(m.bias.data, 0)
     elif isinstance(m, nn.BatchNorm2d):
-        m.weight.data.fill_(1.00)
-        m.bias.data.fill_(0.00)
+        nn.init.normal_(m.weight.data, mean=1, std=0.02)
+        nn.init.constant_(m.bias.data, 0)
+    elif isinstance(m, nn.BatchNorm3d):
+        nn.init.normal_(m.weight.data, mean=1, std=0.02)
+        nn.init.constant_(m.bias.data, 0)
+    elif isinstance(m, nn.Linear):
+        nn.init.xavier_normal_(m.weight.data)
+        nn.init.normal_(m.bias.data)
 
 
 class Att_pooling(nn.Module):
@@ -181,7 +209,10 @@ class RandLANET(nn.Module):
                 d_in = self.config.d_out[-j - 1] * 2 + 2 * self.config.d_out[0]
                 d_out = 2 * self.config.d_out[0]
             self.decoder_blocks.append(
-                net_utils.Conv2d(d_in, d_out, kernel_size=(1, 1), bn=True))
+                net_utils.Conv2d_Transpose(d_in,
+                                           d_out,
+                                           kernel_size=(1, 1),
+                                           bn=True))
 
         self.fc1 = net_utils.Conv2d(d_out, 64, kernel_size=(1, 1), bn=True)
         self.fc2 = net_utils.Conv2d(64, 32, kernel_size=(1, 1), bn=True)
