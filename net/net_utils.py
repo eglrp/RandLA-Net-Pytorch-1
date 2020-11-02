@@ -1,21 +1,30 @@
 #! ~/.miniconda3/envs/pytorch/bin/python
-
-import os
-import sys
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
 from typing import List, Tuple
 
 
-def weight_init(m):
-    if isinstance(m, nn.Linear):
-        nn.init.xavier_normal_(m.weight)
-        nn.init.constant_(m.bias, 0)
-    elif isinstance(m, nn.Conv2d):
-        nn.init.xavier_normal_(m.weight)
-        nn.init.constant_(m.bias, 0)
+class SharedMLP(nn.Sequential):
+    def __init__(self,
+                 args: List[int],
+                 *,
+                 bn: bool = False,
+                 activation=nn.ReLU(inplace=True),
+                 preact: bool = False,
+                 first: bool = False,
+                 name: str = "",
+                 instance_norm: bool = False):
+        super().__init__()
+
+        for i in range(len(args) - 1):
+            self.add_module(
+                name + 'layer{}'.format(i),
+                Conv2d(args[i],
+                       args[i + 1],
+                       bn=(not first or not preact or (i != 0)) and bn,
+                       activation=activation if
+                       (not first or not preact or (i != 0)) else None,
+                       preact=preact,
+                       instance_norm=instance_norm))
 
 
 class _ConvBase(nn.Sequential):
@@ -35,7 +44,7 @@ class _ConvBase(nn.Sequential):
                  name="",
                  instance_norm=False,
                  instance_norm_func=None):
-        super(_ConvBase, self).__init__()
+        super().__init__()
 
         bias = bias and (not bn)
         conv_unit = conv(in_size,
@@ -236,27 +245,3 @@ class BNMomentumScheduler(object):
 
         self.last_epoch = epoch
         self.model.apply(self.setter(self.lmbd(epoch)))
-
-
-class SharedMLP(nn.Sequential):
-    def __init__(self,
-                 args: List[int],
-                 *,
-                 bn: bool = False,
-                 activation=nn.ReLU(inplace=True),
-                 preact: bool = False,
-                 first: bool = False,
-                 name: str = "",
-                 instance_norm: bool = False):
-        super().__init__()
-
-        for i in range(len(args) - 1):
-            self.add_module(
-                name + 'layer{}'.format(i),
-                Conv2d(args[i],
-                       args[i + 1],
-                       bn=(not first or not preact or (i != 0)) and bn,
-                       activation=activation if
-                       (not first or not preact or (i != 0)) else None,
-                       preact=preact,
-                       instance_norm=instance_norm))

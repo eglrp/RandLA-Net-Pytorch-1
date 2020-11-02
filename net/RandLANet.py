@@ -36,37 +36,16 @@ def weight_init(m):
         m.bias.data.fill_(0.00)
 
 
-class SharedMLP(nn.Sequential):
-    def __init__(self, args, bn, activation=True):
-        super(SharedMLP, self).__init__()
-        for i in range(len(args) - 1):
-            self.add_module(
-                'SharedMLP_conv2d_layer{}'.format(i),
-                nn.Conv2d(args[i],
-                          args[i + 1],
-                          kernel_size=(1, 1),
-                          stride=(1, 1),
-                          bias=False))
-            if bn == True:
-                self.add_module('SharedMLP_batchnorm_layer{}'.format(i),
-                                nn.BatchNorm2d(args[i + 1], 1e-6, 0.99))
-            if activation == True:
-                self.add_module('SharedMLP_activation_layer{}'.format(i),
-                                nn.LeakyReLU(0.2, True))
-
-
 class Att_pooling(nn.Module):
     def __init__(self, d_in, d_out):
         super().__init__()
         self.fc = nn.Conv2d(d_in, d_in, (1, 1), bias=False)
-        self.mlp = SharedMLP([d_in, d_out], bn=True)
+        self.mlp = net_utils.Conv2d(d_in, d_out, kernel_size=(1, 1), bn=True)
 
     def forward(self, feature_set):
-        # semantickitti: (16,8),(64,32),(128,64),(256,128)
         att_activation = self.fc(feature_set)
-        # semantickitti: (16,16),(64,64),(128,128),(256,256)
         att_scores = F.softmax(att_activation, dim=3)
-        f_agg = feature_set.contiguous() * att_scores
+        f_agg = feature_set * att_scores
         f_agg = torch.sum(f_agg, dim=3, keepdim=True)
         f_agg = self.mlp(f_agg)
         return f_agg
@@ -75,13 +54,16 @@ class Att_pooling(nn.Module):
 class Building_block(nn.Module):
     def __init__(self, d_out):  #  d_in = d_out//2
         super().__init__()
-        # semantickitti: 16,64,128,256
-        self.mlp1 = SharedMLP([10, d_out // 2], bn=True)
-        # semantickitti: (10,8), (10,32), (10,64), (10,128)
+        self.mlp1 = net_utils.Conv2d(10,
+                                     d_out // 2,
+                                     kernel_size=(1, 1),
+                                     bn=True)
         self.att_pooling_1 = Att_pooling(d_out, d_out // 2)
-        # semantickitti: (16,8),(64,32),(128,64),(256,128)
 
-        self.mlp2 = SharedMLP([d_out // 2, d_out // 2], bn=True)
+        self.mlp2 = net_utils.Conv2d(d_out // 2,
+                                     d_out // 2,
+                                     kernel_size=(1, 1),
+                                     bn=True)
         self.att_pooling_2 = Att_pooling(d_out, d_out)
 
     def forward(self, xyz, feature,
@@ -135,7 +117,6 @@ class Building_block(nn.Module):
         features = features.reshape(batch_size, num_points,
                                     neighbor_idx.shape[-1],
                                     d)  # batch*npoint*nsamples*channel
-
         return features
 
 
@@ -143,12 +124,21 @@ class Dilated_res_block(nn.Module):
     def __init__(self, d_in, d_out):
         super().__init__()
 
-        # semantickitti: (8,16), (32,64), (128,128), (256,256)
-        self.mlp1 = SharedMLP([d_in, d_out // 2], bn=True)
-        # semantickitti: (8,8), (32,32), (128,64), (256,128)
+        self.mlp1 = net_utils.Conv2d(d_in,
+                                     d_out // 2,
+                                     kernel_size=(1, 1),
+                                     bn=True)
         self.lfa = Building_block(d_out)
-        self.mlp2 = SharedMLP([d_out, d_out * 2], bn=True, activation=None)
-        self.shortcut = SharedMLP([d_in, d_out * 2], bn=True, activation=None)
+        self.mlp2 = net_utils.Conv2d(d_out,
+                                     d_out * 2,
+                                     kernel_size=(1, 1),
+                                     bn=True,
+                                     activation=None)
+        self.shortcut = net_utils.Conv2d(d_in,
+                                         d_out * 2,
+                                         kernel_size=(1, 1),
+                                         bn=True,
+                                         activation=None)
 
     def forward(self, feature, xyz, neigh_idx):
         f_pc = self.mlp1(feature)  # Batch*channel*npoints*1
@@ -176,7 +166,10 @@ class RandLANET(nn.Module):
             d_in = 2 * d_out
 
         d_out = d_in
-        self.decoder_0 = SharedMLP([d_in, d_out], bn=True)
+        self.decoder_0 = net_utils.Conv2d(d_in,
+                                          d_out,
+                                          kernel_size=(1, 1),
+                                          bn=True)
 
         self.decoder_blocks = nn.ModuleList()
         for j in range(self.config.num_layers):
@@ -187,14 +180,17 @@ class RandLANET(nn.Module):
             else:
                 d_in = self.config.d_out[-j - 1] * 2 + 2 * self.config.d_out[0]
                 d_out = 2 * self.config.d_out[0]
-            self.decoder_blocks.append(SharedMLP([d_in, d_out], bn=True))
+            self.decoder_blocks.append(
+                net_utils.Conv2d(d_in, d_out, kernel_size=(1, 1), bn=True))
 
-        self.fc1 = SharedMLP([d_out, 64], bn=True)
-        self.fc2 = SharedMLP([64, 32], bn=True)
+        self.fc1 = net_utils.Conv2d(d_out, 64, kernel_size=(1, 1), bn=True)
+        self.fc2 = net_utils.Conv2d(64, 32, kernel_size=(1, 1), bn=True)
         self.dropout = nn.Dropout(0.5)
-        self.fc3 = SharedMLP([32, self.config.num_classes],
-                             bn=False,
-                             activation=None)
+        self.fc3 = net_utils.Conv2d(32,
+                                    self.config.num_classes,
+                                    kernel_size=(1, 1),
+                                    bn=False,
+                                    activation=None)
 
     def random_sample(self, feature, pool_idx):
         """

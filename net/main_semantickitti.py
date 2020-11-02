@@ -173,13 +173,13 @@ class network:
                         (epoch_count * len(self.train_dataloader) + batch_idx))
                     self.stat_dict[key] = 0
 
-            for name, param in self.net.named_parameters():
-                self.writer.add_histogram(
-                    name + '_grad', param.grad,
-                    (epoch_count * len(self.train_dataloader) + batch_idx))
-                self.writer.add_histogram(
-                    name + '_data', param,
-                    (epoch_count * len(self.train_dataloader) + batch_idx))
+            # for name, param in self.net.named_parameters():
+            #     self.writer.add_histogram(
+            #         name + '_grad', param.grad,
+            #         (epoch_count * len(self.train_dataloader) + batch_idx))
+            #     self.writer.add_histogram(
+            #         name + '_data', param,
+            #         (epoch_count * len(self.train_dataloader) + batch_idx))
         mean_iou, iou_list = iou_calc.compute_iou()
         self.writer.add_scalar('training mean iou', mean_iou,
                                (epoch_count * len(self.train_dataloader)))
