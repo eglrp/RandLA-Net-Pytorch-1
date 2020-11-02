@@ -342,15 +342,15 @@ class network:
                 pick_idx = np.random.choice(len(points), 1)
                 print(pick_idx)
                 selected_pc_, selected_labels_, selected_idx_, cloud_ind_ = [],[],[],[]
-                selected_pc, selected_labels, selected_idx = SemanticKITTI.crop_pc(
-                    points, labels, search_tree, pick_idx)
-                selected_pc = selected_pc.astype(np.float32)
-                selected_labels = selected_labels.astype(np.int32)
-                selected_idx = selected_idx.astype(np.int32)
+                # selected_pc, selected_labels, selected_idx = SemanticKITTI.crop_pc(
+                #     points, labels, search_tree, pick_idx)
+                # selected_pc = selected_pc.astype(np.float32)
+                # selected_labels = selected_labels.astype(np.int32)
+                # selected_idx = selected_idx.astype(np.int32)
 
-                # selected_pc = points.astype(np.float32)
-                # selected_labels = labels.astype(np.int32)
-                # selected_idx = pick_idx.astype(np.int32)
+                selected_pc = points.astype(np.float32)
+                selected_labels = labels.astype(np.int32)
+                selected_idx = pick_idx.astype(np.int32)
 
                 selected_pc_.append(selected_pc)  # (N,3)
                 selected_labels_.append(selected_labels)  # (N,)

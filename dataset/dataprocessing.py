@@ -61,7 +61,7 @@ class DataProcessing:
         seq_list = np.sort(os.listdir(dataset_path))
         file_list = []
         for seq_index in seq_list:
-            if (int(seq_index) < 11):
+            if (int(seq_index) >= 11):
                 seq_path = os.path.join(dataset_path, seq_index)
                 pointcloud_path = os.path.join(seq_path, 'velodyne')
                 file_list.append([
@@ -75,9 +75,9 @@ class DataProcessing:
         seq_list = np.sort(os.listdir(dataset_path))
         file_list = []
         for seq_index in seq_list:
-            if (int(seq_index) < 11):
+            if (int(seq_index) >= 11):
                 seq_path = os.path.join(dataset_path, seq_index)
-                label_path = os.path.join(seq_path, 'labels')
+                label_path = os.path.join(seq_path, 'predictions')
                 file_list.append([
                     os.path.join(label_path, file)
                     for file in np.sort(os.listdir(label_path))
