@@ -26,7 +26,7 @@ sys.path.append(root_dir)
 
 from config.config_s3dis import ConfigS3DIS
 from net.s3dis_dataset import S3DIS
-from net.RandLANet import RandLANET, IoUCalculator, compute_loss, compute_acc
+from net.RandLANet_S import RandLANET, IoUCalculator, compute_loss, compute_acc
 
 
 def log_out(out_str, f_out):

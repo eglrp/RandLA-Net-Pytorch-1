@@ -26,7 +26,7 @@ sys.path.append(root_dir)
 
 from config.config_semantickitti import ConfigSemanticKITTI
 from net.semantickitti_dataset import SemanticKITTI
-from net.RandLANet import RandLANET, IoUCalculator, compute_loss, compute_acc, weight_init
+from net.RandLANet_S import RandLANET, IoUCalculator, compute_loss, compute_acc, weight_init
 
 
 def log_out(out_str, f_out):

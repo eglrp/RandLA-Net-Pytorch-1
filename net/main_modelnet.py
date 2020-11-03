@@ -18,6 +18,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler
 from prefetch_generator import BackgroundGenerator
+from tqdm import tqdm
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(base_dir)
@@ -26,7 +27,7 @@ sys.path.append(root_dir)
 
 from config.config_modelnet import ConfigMODELNET
 from net.modelnet_dataset import MODELNET
-from net.RandLANet_C import RandLANET_C, IoUCalculator, compute_loss, compute_acc
+from net.RandLANet_C import RandLANET, IoUCalculator, compute_loss, compute_acc
 
 
 def log_out(out_str, f_out):
@@ -42,6 +43,9 @@ class DataLoaderX(DataLoader):
 
 class network:
     def __init__(self, FLAGS):
+        self.best_instance_acc = 0.0
+        self.best_class_acc = 0.0
+        self.mean_correct = []
         self.writer = SummaryWriter('output/modelnet_tensorboard')
         self.f_out = self.mkdir_log(FLAGS.log_dir)
         self.train_dataset = MODELNET('train')
@@ -69,7 +73,7 @@ class network:
         self.device = torch.device(
             'cuda:0' if torch.cuda.is_available() else 'cpu')
         self.config = ConfigMODELNET
-        self.net = RandLANET_C('S3DIS', self.config)
+        self.net = RandLANET(self.config)
         self.net.to(self.device)
         # torch.cuda.set_device(1)
         # if torch.cuda.device_count() > 1:
@@ -77,7 +81,8 @@ class network:
         #     device_ids=[1,2,3,4]
         #     self.net = nn.DataParallel(self.net, device_ids=[1,2,3,4])
         self.optimizer = optimizer.Adam(self.net.parameters(),
-                                        lr=self.config.learning_rate)
+                                        lr=self.config.learning_rate,
+                                        weight_decay=0.0001)
 
         self.end_points = {}
         self.FLAGS = FLAGS
@@ -85,7 +90,7 @@ class network:
     def mkdir_log(self, out_path):
         if not os.path.exists(out_path):
             os.mkdir(out_path)
-        f_out = open(os.path.join(out_path, 'log_s3dis_train.txt'), 'a')
+        f_out = open(os.path.join(out_path, 'log_modelnet_train.txt'), 'a')
         return f_out
 
     def worker_init(self, worker_id):
@@ -99,12 +104,10 @@ class network:
         self.writer.add_scalar('learning rate', lr, epoch)
 
     def train_one_epoch(self, epoch_count):
-        self.stat_dict = {}  # collect statistics
         self.adjust_learning_rate(epoch_count)
         self.net.train()  # set model to training mode
-        iou_calc = IoUCalculator(self.config)
-        for batch_idx, batch_data in enumerate(self.train_dataloader):
-            t_start = time.time()
+        for batch_idx, batch_data in tqdm(enumerate(self.train_dataloader),
+                                          total=len(self.train_dataloader)):
             for key in batch_data:
                 if type(batch_data[key]) is list:
                     for i in range(len(batch_data[key])):
@@ -120,81 +123,35 @@ class network:
             labels = batch_data['labels']  # (batch, N)
             input_inds = batch_data['input_inds']  # (batch, N)
             cloud_inds = batch_data['cloud_inds']  # (batch, 1)
+            cls = batch_data['cls']
 
             # Forward pass
             self.optimizer.zero_grad()
             self.out = self.net(xyz, neigh_idx, sub_idx, interp_idx, features,
                                 labels, input_inds, cloud_inds)
-            self.loss = compute_loss(self.out, labels, self.config)
-
-            print(self.loss)
-            # self.loss, self.end_points['valid_logits'], self.end_points[
-            #     'valid_labels'] = compute_loss(self.out, labels, self.config)
-            # self.end_points['loss'] = self.loss
-            # # self.writer.add_graph(self.net, input_to_model=[xyz, neigh_idx, sub_idx, interp_idx, features, labels, input_inds, cloud_inds])
+            self.loss = compute_loss(self.out, cls, self.config)
+            pred_choice = self.out.data.max(1)[1]
+            correct = pred_choice.eq(cls.long().data).cpu().sum()
+            self.mean_correct.append(correct.item() / float(xyz[0].size()[0]))
+            # log_out('Train loss: %f' % self.loss, self.f_out)
             # self.writer.add_scalar(
             #     'training loss', self.loss,
             #     (epoch_count * len(self.train_dataloader) + batch_idx))
-
             self.loss.backward()
             self.optimizer.step()
+        train_instance_acc = np.mean(self.mean_correct)
+        log_out('Train acc: %f' % train_instance_acc, self.f_out)
+        self.writer.add_scalar('training acc', train_instance_acc,
+                               (epoch_count * len(self.train_dataloader)))
 
-        #     self.acc = compute_acc(self.end_points['valid_logits'],
-        #                            self.end_points['valid_labels'])
-        #     self.end_points['acc'] = self.acc
-        #     self.writer.add_scalar(
-        #         'training accuracy', self.acc,
-        #         (epoch_count * len(self.train_dataloader) + batch_idx))
-        #     iou_calc.add_data(self.end_points['valid_logits'],
-        #                       self.end_points['valid_labels'])
-
-        #     for key in self.end_points:
-        #         if 'loss' in key or 'acc' in key or 'iou' in key:
-        #             if key not in self.stat_dict:
-        #                 self.stat_dict[key] = 0
-        #             self.stat_dict[key] += self.end_points[key].item()
-        #     t_end = time.time()
-
-        #     batch_interval = 10
-        #     if (batch_idx + 1) % batch_interval == 0:
-        #         log_out(
-        #             ' ----step %08d batch: %08d ----' %
-        #             (epoch_count * len(self.train_dataloader) + batch_idx + 1,
-        #              (batch_idx + 1)), self.f_out)
-        #         for key in sorted(self.stat_dict.keys()):
-        #             log_out(
-        #                 'mean %s: %f---%f ms' %
-        #                 (key, self.stat_dict[key] / batch_interval, 1000 *
-        #                  (t_end - t_start)), self.f_out)
-        #             self.writer.add_scalar(
-        #                 'training mean {}'.format(key),
-        #                 self.stat_dict[key] / batch_interval,
-        #                 (epoch_count * len(self.train_dataloader) + batch_idx))
-        #             self.stat_dict[key] = 0
-
-        #     for name, param in self.net.named_parameters():
-        #         self.writer.add_histogram(
-        #             name + '_grad', param.grad,
-        #             (epoch_count * len(self.train_dataloader) + batch_idx))
-        #         self.writer.add_histogram(
-        #             name + '_data', param,
-        #             (epoch_count * len(self.train_dataloader) + batch_idx))
-        # mean_iou, iou_list = iou_calc.compute_iou()
-        # self.writer.add_scalar('training mean iou', mean_iou,
-        #                        (epoch_count * len(self.train_dataloader)))
-        # log_out('training mean IoU:{:.1f}'.format(mean_iou * 100), self.f_out)
-        # s = 'training IoU:'
-        # for iou_tmp in iou_list:
-        #     s += '{:5.2f} '.format(100 * iou_tmp)
-        # log_out(s, self.f_out)
-        # self.writer.close()
+        self.evaluate_one_epoch(epoch_count)
 
     def evaluate_one_epoch(self, epoch_count):
-        self.current_loss = None
+        mean_correct = []
+        class_acc = np.zeros((self.config.num_classes, 3))
         self.net.eval()  # set model to eval mode (for bn and dp)
-        iou_calc = IoUCalculator(self.config)
-        for batch_idx, batch_data in enumerate(self.test_dataloader):
-            t_start = time.time()
+        for batch_idx, batch_data in tqdm(enumerate(self.test_dataloader),
+                                          total=len(self.test_dataloader)):
             for key in batch_data:
                 if type(batch_data[key]) is list:
                     for i in range(len(batch_data[key])):
@@ -210,95 +167,63 @@ class network:
             labels = batch_data['labels']  # (batch, N)
             input_inds = batch_data['input_inds']  # (batch, N)
             cloud_inds = batch_data['cloud_inds']  # (batch, 1)
+            cls = batch_data['cls']
 
             # Forward pass
             with torch.no_grad():
                 self.out = self.net(xyz, neigh_idx, sub_idx, interp_idx,
                                     features, labels, input_inds, cloud_inds)
+                pred_choice = self.out.data.max(1)[1]
+                for cat in np.unique(cls.cpu()):
+                    classacc = pred_choice[cls == cat].eq(
+                        cls[cls == cat].long().data).cpu().sum()
+                    class_acc[cat, 0] += classacc.item() / float(
+                        xyz[0][cls == cat].size()[0])
+                    class_acc[cat, 1] += 1
+                correct = pred_choice.eq(cls.long().data).cpu().sum()
+                mean_correct.append(correct.item() / float(xyz[0].size()[0]))
+        class_acc[:, 2] = class_acc[:, 0] / class_acc[:, 1]
+        class_acc = np.mean(class_acc[:, 2])
+        instance_acc = np.mean(mean_correct)
 
-            self.loss, self.end_points['valid_logits'], self.end_points[
-                'valid_labels'] = compute_loss(self.out, labels, self.config)
-            self.end_points['loss'] = self.loss
-            # self.writer.add_scalar('eval loss', self.loss, (epoch_count* len(self.test_dataloader) + batch_idx))
-            self.acc = compute_acc(self.end_points['valid_logits'],
-                                   self.end_points['valid_labels'])
-            self.end_points['acc'] = self.acc
-            # self.writer.add_scalar('eval acc', self.acc, (epoch_count* len(self.test_dataloader) + batch_idx))
-            iou_calc.add_data(self.end_points['valid_logits'],
-                              self.end_points['valid_labels'])
+        if (instance_acc >= self.best_instance_acc):
+            self.best_instance_acc = instance_acc
+        if (class_acc >= self.best_class_acc):
+            self.best_class_acc = class_acc
+        log_out(
+            'Test Instance Accuracy: %f, Class Accuracy: %f' %
+            (instance_acc, class_acc), self.f_out)
+        log_out(
+            'Best Instance Accuracy: %f, Class Accuracy: %f' %
+            (self.best_instance_acc, self.best_class_acc), self.f_out)
 
-            # Accumulate statistics and print out
-            for key in self.end_points:
-                if 'loss' in key or 'acc' in key or 'iou' in key:
-                    if key not in self.stat_dict:
-                        self.stat_dict[key] = 0
-                    self.stat_dict[key] += self.end_points[key].item()
+        try:
+            save_dict = self.net.module.state_dict()
+        except:
+            save_dict = self.net.state_dict()
 
-            t_end = time.time()
-
-            batch_interval = 10
-            if (batch_idx + 1) % batch_interval == 0:
-                log_out(
-                    ' ----step %08d batch: %08d ----' %
-                    (epoch_count * len(self.test_dataloader) + batch_idx + 1,
-                     (batch_idx + 1)), self.f_out)
-
-        for key in sorted(self.stat_dict.keys()):
-            log_out(
-                'mean %s: %f---%f ms' %
-                (key, self.stat_dict[key] / batch_interval, 1000 *
-                 (t_end - t_start)), self.f_out)
-            self.writer.add_scalar(
-                'eval mean {}'.format(key),
-                self.stat_dict[key] / (float(batch_idx + 1)),
-                (epoch_count * len(self.test_dataloader)))
-        mean_iou, iou_list = iou_calc.compute_iou()
-        self.writer.add_scalar('eval mean iou', mean_iou,
-                               (epoch_count * len(self.test_dataloader)))
-        log_out('eval mean IoU:{:.1f}'.format(mean_iou * 100), self.f_out)
-        s = 'eval IoU:'
-        for iou_tmp in iou_list:
-            s += '{:5.2f} '.format(100 * iou_tmp)
-        log_out(s, self.f_out)
-        self.writer.close()
-
-        current_loss = self.stat_dict['loss'] / (float(batch_idx + 1))
-        return current_loss
+        if (instance_acc >= self.best_instance_acc):
+            state = {
+                'epoch': epoch_count,
+                'instance_acc': instance_acc,
+                'class_acc': class_acc,
+                'model_state_dict': save_dict,
+                'optimizer_state_dict': self.optimizer.state_dict(),
+            }
+            torch.save(
+                state,
+                os.path.join(self.FLAGS.log_dir, 'modelnet_checkpoint.tar'))
 
     def train(self, start_epoch):
-        loss = 0
-        min_loss = 100
-        current_loss = None
         for epoch in range(start_epoch, self.FLAGS.max_epoch):
             log_out('**************** EPOCH %03d ****************' % (epoch),
                     self.f_out)
             log_out(str(datetime.datetime.now()), self.f_out)
             np.random.seed()
             self.train_one_epoch(epoch)
-
-            # if epoch == 0 or epoch % 10 == 9:
-            #     log_out('**** EVAL EPOCH %03d START****' % (epoch), self.f_out)
-            #     current_loss = self.evaluate_one_epoch(epoch)
-            #     log_out('**** EVAL EPOCH %03d END****' % (epoch), self.f_out)
-
-            # save_dict = {
-            #     'epoch': epoch +
-            #     1,  # after training one epoch, the start_epoch should be epoch+1
-            #     'optimizer_state_dict': self.optimizer.state_dict(),
-            #     'loss': loss,
-            # }
-
-            # try:
-            #     save_dict['model_state_dict'] = self.net.module.state_dict()
-            # except:
-            #     save_dict['model_state_dict'] = self.net.state_dict()
-
-            # torch.save(
-            #     save_dict,
-            #     os.path.join(self.FLAGS.log_dir, 's3dis_checkpoint.tar'))
+            self.writer.close()
 
     def run(self):
-        it = -1
         start_epoch = 0
         checkpoint_path = self.FLAGS.checkpoint_path
         if checkpoint_path is not None and os.path.isfile(checkpoint_path):

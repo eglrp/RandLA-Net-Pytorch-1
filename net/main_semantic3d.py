@@ -26,7 +26,7 @@ sys.path.append(root_dir)
 
 from config.config_semantic3d import ConfigSemantic3D
 from net.semanti3d_dataset import Semantic3D
-from net.RandLANet import RandLANET, IoUCalculator, compute_loss, compute_acc
+from net.RandLANet_S import RandLANET, IoUCalculator, compute_loss, compute_acc
 
 
 def log_out(out_str, f_out):

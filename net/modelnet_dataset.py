@@ -208,7 +208,7 @@ class MODELNET(torch_data.Dataset):
                 np.int32), np.array([cloud_idx], dtype=np.int32)
 
     def tf_map(self, batch_xyz, batch_features, batch_labels, batch_pc_idx,
-               batch_cloud_idx):
+               batch_cloud_idx, cls):
         batch_features = np.concatenate([batch_xyz, batch_features], axis=-1)
         input_points = []
         input_neighbors = []
@@ -234,28 +234,31 @@ class MODELNET(torch_data.Dataset):
 
         input_list = input_points + input_neighbors + input_pools + input_up_samples
         input_list += [
-            batch_features, batch_labels, batch_pc_idx, batch_cloud_idx
+            batch_features, batch_labels, batch_pc_idx, batch_cloud_idx, cls
         ]
         return input_list
 
     def collate_fn(self, batch):
         queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx = [], [], [], [], []
+        cls = []
         for i in range(len(batch)):
             queried_pc_xyz.append(batch[i][0])
             queried_pc_colors.append(batch[i][1])
             queried_pc_labels.append(batch[i][2])
             queried_idx.append(batch[i][3])
             queried_cloud_idx.append(batch[i][4])
+            cls.append(batch[i][5])
 
         queried_pc_xyz = np.stack(queried_pc_xyz)
         queried_pc_colors = np.stack(queried_pc_colors)
         queried_pc_labels = np.stack(queried_pc_labels)
         queried_idx = np.stack(queried_idx)
         queried_cloud_idx = np.stack(queried_cloud_idx)
+        cls = np.stack(cls)
 
         flat_inputs = self.tf_map(queried_pc_xyz, queried_pc_colors,
                                   queried_pc_labels, queried_idx,
-                                  queried_cloud_idx)
+                                  queried_cloud_idx, cls)
 
         num_layers = ConfigMODELNET.num_layers
         inputs = {}
@@ -279,15 +282,19 @@ class MODELNET(torch_data.Dataset):
                                                             2]).long()
         inputs['cloud_inds'] = torch.from_numpy(flat_inputs[4 * num_layers +
                                                             3]).long()
+        inputs['cls'] = torch.from_numpy(flat_inputs[-1]).long()
         return inputs
 
     def __len__(self):
         return len(self.datapath)
 
     def __getitem__(self, item):
+        cls = self.classes[self.datapath[item][0]]
+        # print(cls)
+        # cls = np.array([cls]).astype(np.int32)
         queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx = self.spatially_regular_gen(
             item)
-        return queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx
+        return queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_idx, queried_cloud_idx, cls
 
 
 s = MODELNET('train')
