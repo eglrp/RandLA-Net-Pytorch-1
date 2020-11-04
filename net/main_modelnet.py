@@ -82,7 +82,12 @@ class network:
         #     self.net = nn.DataParallel(self.net, device_ids=[1,2,3,4])
         self.optimizer = optimizer.Adam(self.net.parameters(),
                                         lr=self.config.learning_rate,
-                                        weight_decay=0.0001)
+                                        betas=(0.9, 0.999),
+                                        eps=1e-08,
+                                        weight_decay=1e-4)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
+                                                         step_size=20,
+                                                         gamma=0.7)
 
         self.end_points = {}
         self.FLAGS = FLAGS
@@ -104,7 +109,8 @@ class network:
         self.writer.add_scalar('learning rate', lr, epoch)
 
     def train_one_epoch(self, epoch_count):
-        self.adjust_learning_rate(epoch_count)
+        # self.adjust_learning_rate(epoch_count)
+        self.scheduler.step()
         self.net.train()  # set model to training mode
         for batch_idx, batch_data in tqdm(enumerate(self.train_dataloader),
                                           total=len(self.train_dataloader)):
@@ -133,21 +139,12 @@ class network:
             pred_choice = self.out.data.max(1)[1]
             correct = pred_choice.eq(cls.long().data).cpu().sum()
             self.mean_correct.append(correct.item() / float(xyz[0].size()[0]))
-            # log_out('Train loss: %f' % self.loss, self.f_out)
-            # self.writer.add_scalar(
-            #     'training loss', self.loss,
-            #     (epoch_count * len(self.train_dataloader) + batch_idx))
             self.loss.backward()
             self.optimizer.step()
         train_instance_acc = np.mean(self.mean_correct)
         log_out('Train acc: %f' % train_instance_acc, self.f_out)
-        self.writer.add_scalar('training acc', train_instance_acc,
-                               (epoch_count * len(self.train_dataloader)))
-
-        self.evaluate_one_epoch(epoch_count)
 
     def evaluate_one_epoch(self, epoch_count):
-        mean_correct = []
         class_acc = np.zeros((self.config.num_classes, 3))
         self.net.eval()  # set model to eval mode (for bn and dp)
         for batch_idx, batch_data in tqdm(enumerate(self.test_dataloader),
@@ -181,10 +178,11 @@ class network:
                         xyz[0][cls == cat].size()[0])
                     class_acc[cat, 1] += 1
                 correct = pred_choice.eq(cls.long().data).cpu().sum()
-                mean_correct.append(correct.item() / float(xyz[0].size()[0]))
+                self.mean_correct.append(correct.item() /
+                                         float(xyz[0].size()[0]))
         class_acc[:, 2] = class_acc[:, 0] / class_acc[:, 1]
         class_acc = np.mean(class_acc[:, 2])
-        instance_acc = np.mean(mean_correct)
+        instance_acc = np.mean(self.mean_correct)
 
         if (instance_acc >= self.best_instance_acc):
             self.best_instance_acc = instance_acc
@@ -202,17 +200,17 @@ class network:
         except:
             save_dict = self.net.state_dict()
 
-        if (instance_acc >= self.best_instance_acc):
-            state = {
-                'epoch': epoch_count,
-                'instance_acc': instance_acc,
-                'class_acc': class_acc,
-                'model_state_dict': save_dict,
-                'optimizer_state_dict': self.optimizer.state_dict(),
-            }
-            torch.save(
-                state,
-                os.path.join(self.FLAGS.log_dir, 'modelnet_checkpoint.tar'))
+        # if (instance_acc >= self.best_instance_acc):
+        #     state = {
+        #         'epoch': epoch_count,
+        #         'instance_acc': instance_acc,
+        #         'class_acc': class_acc,
+        #         'model_state_dict': save_dict,
+        #         'optimizer_state_dict': self.optimizer.state_dict(),
+        #     }
+        #     torch.save(
+        #         state,
+        #         os.path.join(self.FLAGS.log_dir, 'modelnet_checkpoint.tar'))
 
     def train(self, start_epoch):
         for epoch in range(start_epoch, self.FLAGS.max_epoch):
@@ -221,7 +219,8 @@ class network:
             log_out(str(datetime.datetime.now()), self.f_out)
             np.random.seed()
             self.train_one_epoch(epoch)
-            self.writer.close()
+            self.evaluate_one_epoch(epoch)
+            # self.writer.close()
 
     def run(self):
         start_epoch = 0
