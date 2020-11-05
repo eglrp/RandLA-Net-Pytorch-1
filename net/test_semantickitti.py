@@ -323,7 +323,7 @@ class network:
                              'semantickitti_checkpoint.tar'))
 
     def detect_pc(self):
-        # colors = Plot.random_colors(21, seed=2)
+        colors = Plot.random_colors(21, seed=2)
         for batch_idx, batch_data in enumerate(self.test_dataloader):
             for key in batch_data:
                 if type(batch_data[key]) is list:
@@ -348,15 +348,15 @@ class network:
                                      "pointcloud:{}".format(batch_idx))
                 Plot.draw_pointcloud_semantic_instance(
                     xyz[0].squeeze().cpu().numpy(),
+                    labels.cpu().numpy()[0],
+                    "pointcloud_label:{}".format(batch_idx), colors)
+                Plot.draw_pointcloud_semantic_instance(
+                    xyz[0].squeeze().cpu().numpy(),
                     self.out.argmax(dim=1).cpu().numpy().squeeze(),
-                    "pointcloud_label:{}".format(batch_idx))
+                    "pointcloud_label:{}".format(batch_idx), colors)
 
                 print(self.out.argmax(dim=1).cpu().numpy().squeeze())
                 print(labels.cpu().numpy()[0])
-                Plot.draw_pointcloud_semantic_instance(
-                    xyz[0].squeeze().cpu().numpy(),
-                    labels.cpu().numpy()[0],
-                    "pointcloud_label:{}".format(batch_idx))
 
         # for seq_id in sequence_list:
         #     print('sequence' + seq_id + ' start')
@@ -439,6 +439,24 @@ class network:
         #         labels = inputs['labels']  # (batch, N)
         #         input_inds = inputs['input_inds']  # (batch, N)
         #         cloud_inds = inputs['cloud_inds']  # (batch, 1)
+
+        #         with torch.no_grad():
+        #             self.out = self.net(xyz, neigh_idx, sub_idx, interp_idx,
+        #                                 features, labels, input_inds,
+        #                                 cloud_inds)
+        #             Plot.draw_pointcloud(xyz[0].squeeze().cpu().numpy(),
+        #                                  "pointcloud:{}".format(scan_id))
+        #             Plot.draw_pointcloud_semantic_instance(
+        #                 xyz[0].squeeze().cpu().numpy(),
+        #                 self.out.argmax(dim=1).cpu().numpy().squeeze(),
+        #                 "pointcloud_label:{}".format(scan_id))
+
+        #             print(self.out.argmax(dim=1).cpu().numpy().squeeze())
+        #             print(labels.cpu().numpy()[0])
+        #             Plot.draw_pointcloud_semantic_instance(
+        #                 xyz[0].squeeze().cpu().numpy(),
+        #                 labels.cpu().numpy()[0],
+        #                 "pointcloud_label:{}".format(scan_id))
 
     def run(self):
         checkpoint_path = self.FLAGS.checkpoint_path

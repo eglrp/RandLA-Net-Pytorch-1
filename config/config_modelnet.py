@@ -20,7 +20,7 @@ class ConfigMODELNET:
 
     noise_init = 3.5  # noise initial parameter
     max_epoch = 100  # maximum epoch during training
-    learning_rate = 0.001  # initial learning rate
+    learning_rate = 0.005  # initial learning rate
     lr_decays = {i: 0.95 for i in range(0, 500)}  # decay rate of learning rate
 
     train_sum_dir = 'modelnet_train_log'

@@ -132,7 +132,7 @@ class MODELNET(torch_data.Dataset):
         tree_path = os.path.join(self.path,
                                  'input_{:.3f}'.format(sub_grid_size))
         for i, file_path in enumerate(self.all_files):
-            print(i)
+            # print(i)
             cloud_name = file_path.split('/')[-1][:-4]
             kd_tree_file = os.path.join(tree_path,
                                         '{:s}_KDTree.pkl'.format(cloud_name))

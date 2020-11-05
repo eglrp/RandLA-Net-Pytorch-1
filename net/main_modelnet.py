@@ -85,9 +85,9 @@ class network:
                                         betas=(0.9, 0.999),
                                         eps=1e-08,
                                         weight_decay=1e-4)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
-                                                         step_size=20,
-                                                         gamma=0.7)
+        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
+        #                                                  step_size=20,
+        #                                                  gamma=0.7)
 
         self.end_points = {}
         self.FLAGS = FLAGS
@@ -109,8 +109,8 @@ class network:
         self.writer.add_scalar('learning rate', lr, epoch)
 
     def train_one_epoch(self, epoch_count):
-        # self.adjust_learning_rate(epoch_count)
-        self.scheduler.step()
+        self.adjust_learning_rate(epoch_count)
+        # self.scheduler.step()
         self.net.train()  # set model to training mode
         for batch_idx, batch_data in tqdm(enumerate(self.train_dataloader),
                                           total=len(self.train_dataloader)):
