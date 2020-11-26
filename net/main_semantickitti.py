@@ -26,7 +26,7 @@ sys.path.append(root_dir)
 
 from config.config_semantickitti import ConfigSemanticKITTI
 from net.semantickitti_dataset import SemanticKITTI
-from net.RandLANet_S import RandLANET, IoUCalculator, compute_loss, compute_acc, weight_init
+from net.RandLANet import RandLANET, IoUCalculator, compute_loss, compute_acc
 
 
 def log_out(out_str, f_out):
@@ -70,7 +70,6 @@ class network:
             'cuda:0' if torch.cuda.is_available() else 'cpu')
         self.config = ConfigSemanticKITTI
         self.net = RandLANET('SemanticKITTI', self.config)
-        self.net.apply(weight_init)
         self.net.to(self.device)
         # torch.cuda.set_device(1)
         # if torch.cuda.device_count() > 1:
@@ -84,6 +83,8 @@ class network:
         self.end_points = {}
         self.FLAGS = FLAGS
         self.mIou_list = [0]
+
+        print(self.net)
 
     def mkdir_log(self, out_path):
         if not os.path.exists(out_path):
@@ -157,7 +158,7 @@ class network:
                     self.stat_dict[key] += self.end_points[key].item()
             t_end = time.time()
 
-            batch_interval = 10
+            batch_interval = 50
             if (batch_idx + 1) % batch_interval == 0:
                 log_out(
                     ' ----step %08d batch: %08d ----' %
@@ -237,7 +238,7 @@ class network:
 
             t_end = time.time()
 
-            batch_interval = 10
+            batch_interval = 50
             if (batch_idx + 1) % batch_interval == 0:
                 log_out(
                     ' ----step %08d batch: %08d ----' %

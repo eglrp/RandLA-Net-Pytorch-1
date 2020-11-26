@@ -112,8 +112,7 @@ class network:
         self.adjust_learning_rate(epoch_count)
         # self.scheduler.step()
         self.net.train()  # set model to training mode
-        for batch_idx, batch_data in tqdm(enumerate(self.train_dataloader),
-                                          total=len(self.train_dataloader)):
+        for batch_idx, batch_data in enumerate(self.train_dataloader):
             for key in batch_data:
                 if type(batch_data[key]) is list:
                     for i in range(len(batch_data[key])):

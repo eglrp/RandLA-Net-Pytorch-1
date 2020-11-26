@@ -324,139 +324,161 @@ class network:
 
     def detect_pc(self):
         colors = Plot.random_colors(21, seed=2)
-        for batch_idx, batch_data in enumerate(self.test_dataloader):
-            for key in batch_data:
-                if type(batch_data[key]) is list:
-                    for i in range(len(batch_data[key])):
-                        batch_data[key][i] = batch_data[key][i].cuda()
-                else:
-                    batch_data[key] = batch_data[key].cuda()
+        # for batch_idx, batch_data in enumerate(self.test_dataloader):
+        #     for key in batch_data:
+        #         if type(batch_data[key]) is list:
+        #             for i in range(len(batch_data[key])):
+        #                 batch_data[key][i] = batch_data[key][i].cuda()
+        #         else:
+        #             batch_data[key] = batch_data[key].cuda()
 
-            xyz = batch_data['xyz']  # (batch,N,3)
-            neigh_idx = batch_data['neigh_idx']  # (batch,N,16)
-            sub_idx = batch_data['sub_idx']  # (batch,N/4,16)
-            interp_idx = batch_data['interp_idx']  # (batch,N,1)
-            features = batch_data['features']  # (batch, 3, N)
-            labels = batch_data['labels']  # (batch, N)
-            input_inds = batch_data['input_inds']  # (batch, N)
-            cloud_inds = batch_data['cloud_inds']  # (batch, 1)
+        #     xyz = batch_data['xyz']  # (batch,N,3)
+        #     neigh_idx = batch_data['neigh_idx']  # (batch,N,16)
+        #     sub_idx = batch_data['sub_idx']  # (batch,N/4,16)
+        #     interp_idx = batch_data['interp_idx']  # (batch,N,1)
+        #     features = batch_data['features']  # (batch, 3, N)
+        #     labels = batch_data['labels']  # (batch, N)
+        #     input_inds = batch_data['input_inds']  # (batch, N)
+        #     cloud_inds = batch_data['cloud_inds']  # (batch, 1)
 
-            with torch.no_grad():
-                self.out = self.net(xyz, neigh_idx, sub_idx, interp_idx,
-                                    features, labels, input_inds, cloud_inds)
-                Plot.draw_pointcloud(xyz[0].squeeze().cpu().numpy(),
-                                     "pointcloud:{}".format(batch_idx))
-                Plot.draw_pointcloud_semantic_instance(
-                    xyz[0].squeeze().cpu().numpy(),
-                    labels.cpu().numpy()[0],
-                    "pointcloud_label:{}".format(batch_idx), colors)
-                Plot.draw_pointcloud_semantic_instance(
-                    xyz[0].squeeze().cpu().numpy(),
-                    self.out.argmax(dim=1).cpu().numpy().squeeze(),
-                    "pointcloud_label:{}".format(batch_idx), colors)
+        #     with torch.no_grad():
+        #         self.out = self.net(xyz, neigh_idx, sub_idx, interp_idx,
+        #                             features, labels, input_inds, cloud_inds)
+        #         Plot.draw_pointcloud(xyz[0].squeeze().cpu().numpy(),
+        #                              "pointcloud:{}".format(batch_idx))
+        #         Plot.draw_pointcloud_semantic_instance(
+        #             xyz[0].squeeze().cpu().numpy(),
+        #             labels.cpu().numpy()[0],
+        #             "pointcloud_label:{}".format(batch_idx), colors)
+        #         Plot.draw_pointcloud_semantic_instance(
+        #             xyz[0].squeeze().cpu().numpy(),
+        #             self.out.argmax(dim=1).cpu().numpy().squeeze(),
+        #             "pointcloud_label:{}".format(batch_idx), colors)
 
-                print(self.out.argmax(dim=1).cpu().numpy().squeeze())
-                print(labels.cpu().numpy()[0])
+        #         print(self.out.argmax(dim=1).cpu().numpy().squeeze())
+        #         print(labels.cpu().numpy()[0])
 
-        # for seq_id in sequence_list:
-        #     print('sequence' + seq_id + ' start')
-        #     seq_path = os.path.join(dataset_path, seq_id)
-        #     pc_path = os.path.join(seq_path, 'velodyne')
-        #     label_path = os.path.join(seq_path, 'labels')
-        #     scan_list = np.sort(os.listdir(pc_path))
-        #     for scan_id in scan_list:
-        #         print(scan_id)
-        #         points = DataProcessing.load_pc_kitti(
-        #             os.path.join(pc_path, scan_id))
-        #         labels = DataProcessing.load_label_kitti(
-        #             os.path.join(label_path,
-        #                          str(scan_id[:-4]) + '.label'), remap_lut)
-        #         # label_ = labels
-        #         search_tree = KDTree(points)
-        #         pick_idx = np.random.choice(len(points), 1)
-        #         print(pick_idx)
-        #         selected_pc_, selected_labels_, selected_idx_, cloud_ind_ = [],[],[],[]
-        #         # selected_pc, selected_labels, selected_idx = SemanticKITTI.crop_pc(
-        #         #     points, labels, search_tree, pick_idx)
-        #         # selected_pc = selected_pc.astype(np.float32)
-        #         # selected_labels = selected_labels.astype(np.int32)
-        #         # selected_idx = selected_idx.astype(np.int32)
+        for seq_id in sequence_list:
+            print('sequence' + seq_id + ' start')
+            seq_path = os.path.join(dataset_path, seq_id)
+            pc_path = os.path.join(seq_path, 'velodyne')
+            label_path = os.path.join(seq_path, 'labels')
+            scan_list = np.sort(os.listdir(pc_path))
+            for scan_id in scan_list:
+                print(scan_id)
+                points = DataProcessing.load_pc_kitti(
+                    os.path.join(pc_path, scan_id))
+                labels = DataProcessing.load_label_kitti(
+                    os.path.join(label_path,
+                                 str(scan_id[:-4]) + '.label'), remap_lut)
+                # label_ = labels
+                search_tree = KDTree(points)
+                pick_idx = np.random.choice(len(points), 1)
+                print(pick_idx)
+                selected_pc_, selected_labels_, selected_idx_, cloud_ind_ = [],[],[],[]
+                # selected_pc, selected_labels, selected_idx = SemanticKITTI.crop_pc(
+                #     points, labels, search_tree, pick_idx)
+                # selected_pc = selected_pc.astype(np.float32)
+                # selected_labels = selected_labels.astype(np.int32)
+                # selected_idx = selected_idx.astype(np.int32)
 
-        #         selected_pc = points.astype(np.float32)
-        #         selected_labels = labels.astype(np.int32)
-        #         selected_idx = pick_idx.astype(np.int32)
+                selected_pc = points.astype(np.float32)
+                selected_labels = labels.astype(np.int32)
+                selected_idx = pick_idx.astype(np.int32)
 
-        #         selected_pc_.append(selected_pc)  # (N,3)
-        #         selected_labels_.append(selected_labels)  # (N,)
-        #         selected_idx_.append(selected_idx)  # (N,)
-        #         cloud_ind_.append(np.array([scan_id[:-4]],
-        #                                    dtype=np.int32))  # (1,)
+                selected_pc_.append(selected_pc)  # (N,3)
+                selected_labels_.append(selected_labels)  # (N,)
+                selected_idx_.append(selected_idx)  # (N,)
+                cloud_ind_.append(np.array([scan_id[:-4]],
+                                           dtype=np.int32))  # (1,)
 
-        #         selected_pc_ = np.stack(selected_pc_)  # (batch,N,3)
-        #         selected_labels_ = np.stack(selected_labels_)  # (batch,N)
-        #         selected_idx_ = np.stack(selected_idx_)  # (batch,N)
-        #         cloud_ind_ = np.stack(cloud_ind_)  # (batch,1)
+                selected_pc_ = np.stack(selected_pc_)  # (batch,N,3)
+                selected_labels_ = np.stack(selected_labels_)  # (batch,N)
+                selected_idx_ = np.stack(selected_idx_)  # (batch,N)
+                cloud_ind_ = np.stack(cloud_ind_)  # (batch,1)
 
-        #         flat_inputs = SemanticKITTI.tf_map(selected_pc_,
-        #                                            selected_labels_,
-        #                                            selected_idx_, cloud_ind_)
+                flat_inputs = SemanticKITTI.tf_map(selected_pc_,
+                                                   selected_labels_,
+                                                   selected_idx_, cloud_ind_)
 
-        #         num_layers = ConfigSemanticKITTI.num_layers
-        #         inputs = {}
-        #         inputs['xyz'] = []  # (batch,N,3)
-        #         for tmp in flat_inputs[:num_layers]:
-        #             inputs['xyz'].append(torch.from_numpy(tmp).float().cuda())
-        #         inputs['neigh_idx'] = []  # (batch,N,16)
-        #         for tmp in flat_inputs[num_layers:2 * num_layers]:
-        #             inputs['neigh_idx'].append(
-        #                 torch.from_numpy(tmp).long().cuda())
-        #         inputs['sub_idx'] = []  # (batch,N/4,16)
-        #         for tmp in flat_inputs[2 * num_layers:3 * num_layers]:
-        #             inputs['sub_idx'].append(
-        #                 torch.from_numpy(tmp).long().cuda())
-        #         inputs['interp_idx'] = []  # (batch,N,1)
-        #         for tmp in flat_inputs[3 * num_layers:4 * num_layers]:
-        #             inputs['interp_idx'].append(
-        #                 torch.from_numpy(tmp).long().cuda())
-        #         inputs['features'] = torch.from_numpy(
-        #             flat_inputs[4 * num_layers]).transpose(
-        #                 1, 2).float().cuda()  # (batch, N, 3)->(batch, 3, N)
-        #         inputs['labels'] = torch.from_numpy(
-        #             flat_inputs[4 * num_layers +
-        #                         1]).long().cuda()  # (batch, N)
-        #         inputs['input_inds'] = torch.from_numpy(
-        #             flat_inputs[4 * num_layers +
-        #                         2]).long().cuda()  # (batch, N)
-        #         inputs['cloud_inds'] = torch.from_numpy(
-        #             flat_inputs[4 * num_layers +
-        #                         3]).long().cuda()  # (batch, 1)
+                num_layers = ConfigSemanticKITTI.num_layers
+                inputs = {}
+                inputs['xyz'] = []  # (batch,N,3)
+                for tmp in flat_inputs[:num_layers]:
+                    inputs['xyz'].append(torch.from_numpy(tmp).float().cuda())
+                inputs['neigh_idx'] = []  # (batch,N,16)
+                for tmp in flat_inputs[num_layers:2 * num_layers]:
+                    inputs['neigh_idx'].append(
+                        torch.from_numpy(tmp).long().cuda())
+                inputs['sub_idx'] = []  # (batch,N/4,16)
+                for tmp in flat_inputs[2 * num_layers:3 * num_layers]:
+                    inputs['sub_idx'].append(
+                        torch.from_numpy(tmp).long().cuda())
+                inputs['interp_idx'] = []  # (batch,N,1)
+                for tmp in flat_inputs[3 * num_layers:4 * num_layers]:
+                    inputs['interp_idx'].append(
+                        torch.from_numpy(tmp).long().cuda())
+                inputs['features'] = torch.from_numpy(
+                    flat_inputs[4 * num_layers]).transpose(
+                        1, 2).float().cuda()  # (batch, N, 3)->(batch, 3, N)
+                inputs['labels'] = torch.from_numpy(
+                    flat_inputs[4 * num_layers +
+                                1]).long().cuda()  # (batch, N)
+                inputs['input_inds'] = torch.from_numpy(
+                    flat_inputs[4 * num_layers +
+                                2]).long().cuda()  # (batch, N)
+                inputs['cloud_inds'] = torch.from_numpy(
+                    flat_inputs[4 * num_layers +
+                                3]).long().cuda()  # (batch, 1)
 
-        #         xyz = inputs['xyz']  # (batch,N,3)
-        #         neigh_idx = inputs['neigh_idx']  # (batch,N,16)
-        #         sub_idx = inputs['sub_idx']  # (batch,N/4,16)
-        #         interp_idx = inputs['interp_idx']  # (batch,N,1)
-        #         features = inputs['features']  # (batch, 3, N)
-        #         labels = inputs['labels']  # (batch, N)
-        #         input_inds = inputs['input_inds']  # (batch, N)
-        #         cloud_inds = inputs['cloud_inds']  # (batch, 1)
+                xyz = inputs['xyz']  # (batch,N,3)
+                neigh_idx = inputs['neigh_idx']  # (batch,N,16)
+                sub_idx = inputs['sub_idx']  # (batch,N/4,16)
+                interp_idx = inputs['interp_idx']  # (batch,N,1)
+                features = inputs['features']  # (batch, 3, N)
+                labels = inputs['labels']  # (batch, N)
+                input_inds = inputs['input_inds']  # (batch, N)
+                cloud_inds = inputs['cloud_inds']  # (batch, 1)
 
-        #         with torch.no_grad():
-        #             self.out = self.net(xyz, neigh_idx, sub_idx, interp_idx,
-        #                                 features, labels, input_inds,
-        #                                 cloud_inds)
-        #             Plot.draw_pointcloud(xyz[0].squeeze().cpu().numpy(),
-        #                                  "pointcloud:{}".format(scan_id))
-        #             Plot.draw_pointcloud_semantic_instance(
-        #                 xyz[0].squeeze().cpu().numpy(),
-        #                 self.out.argmax(dim=1).cpu().numpy().squeeze(),
-        #                 "pointcloud_label:{}".format(scan_id))
+                with torch.no_grad():
+                    # labels = labels.reshape(-1)
+                    self.out = self.net(
+                        xyz, neigh_idx, sub_idx, interp_idx, features, labels,
+                        input_inds,
+                        cloud_inds).argmax(dim=1).cpu().numpy().squeeze()
+                    print(self.out)
+                    pred = self.out.astype(np.uint32)
+                    upper_half = pred >> 16
+                    lower_half = pred & 0xFFFF
+                    lower_half = remap_lut[lower_half]
+                    pred = (upper_half << 16) + lower_half
+                    pred = pred.astype(np.uint32)
+                    print(pred)
+                    # logits = self.out.transpose(1, 2).reshape(
+                    #     -1, ConfigSemanticKITTI.num_classes)
+                    # ignored_bool = labels == 0
+                    # for ign_label in ConfigSemanticKITTI.ignored_label_inds:
+                    #     ignored_bool = ignored_bool | (labels == ign_label)
+                    # valid_idx = ignored_bool == 0
+                    # valid_logits = logits[valid_idx, :]
+                    # valid_labels_init = labels[valid_idx]
 
-        #             print(self.out.argmax(dim=1).cpu().numpy().squeeze())
-        #             print(labels.cpu().numpy()[0])
-        #             Plot.draw_pointcloud_semantic_instance(
-        #                 xyz[0].squeeze().cpu().numpy(),
-        #                 labels.cpu().numpy()[0],
-        #                 "pointcloud_label:{}".format(scan_id))
+                    # print(valid_logits.shape)
+
+                    # print(self.out.argmax(dim=1).cpu().numpy().squeeze().shape)
+
+                    # Plot.draw_pointcloud(xyz[0].squeeze().cpu().numpy(),
+                    #                      "pointcloud:{}".format(scan_id))
+                    # Plot.draw_pointcloud_semantic_instance(
+                    #     xyz[0].squeeze().cpu().numpy(), pred,
+                    #     "pointcloud_label:{}".format(scan_id))
+
+                    # print(self.out.argmax(dim=1).cpu().numpy().squeeze())
+                    print(labels.cpu().numpy()[0])
+                    Plot.draw_pointcloud_semantic_instance(
+                        xyz[0].squeeze().cpu().numpy(),
+                        labels.cpu().numpy()[0],
+                        "pointcloud_label:{}".format(scan_id))
 
     def run(self):
         checkpoint_path = self.FLAGS.checkpoint_path
@@ -475,7 +497,7 @@ class network:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint_path',
-                        default='output/semantickitti_checkpoint.tar',
+                        default='output/checkpoint.tar',
                         help='Model checkpoint path [default: None]')
     parser.add_argument(
         '--log_dir',

@@ -1,6 +1,111 @@
 #! ~/.miniconda3/envs/pytorch/bin/python
+import torch
 import torch.nn as nn
 from typing import List, Tuple
+
+
+class conv1d(nn.Sequential):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride,
+                 padding,
+                 name,
+                 bias=True,
+                 activation_fn=nn.ReLU(inplace=True),
+                 bn=True,
+                 eps=1e-6,
+                 momentum=0.99):
+        super(conv1d, self).__init__()
+        conv1d_layer = nn.Conv1d(in_channels=in_channels,
+                                 out_channels=out_channels,
+                                 kernel_size=kernel_size,
+                                 stride=stride,
+                                 padding=padding,
+                                 bias=bias)
+        nn.init.xavier_normal_(conv1d_layer.weight.data)
+        if bias is True:
+            nn.init.constant_(conv1d_layer.bias.data, 0)
+        self.add_module(name + 'conv1d', conv1d_layer)
+
+        if bn is True:
+            bn_layer = nn.BatchNorm1d(num_features=out_channels,
+                                      eps=eps,
+                                      momentum=momentum)
+            self.add_module(name + 'bn1d', bn_layer)
+        if activation_fn is not None:
+            self.add_module(name + 'activation', activation_fn)
+
+
+class conv2d(nn.Sequential):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride,
+                 padding,
+                 name,
+                 bias=True,
+                 activation_fn=nn.ReLU(inplace=True),
+                 bn=True,
+                 eps=1e-6,
+                 momentum=0.99):
+        super(conv2d, self).__init__()
+        conv2d_layer = nn.Conv2d(in_channels=in_channels,
+                                 out_channels=out_channels,
+                                 kernel_size=kernel_size,
+                                 stride=stride,
+                                 padding=padding,
+                                 bias=bias)
+        nn.init.xavier_normal_(conv2d_layer.weight.data)
+        if bias is True:
+            nn.init.constant_(conv2d_layer.bias.data, 0)
+        self.add_module(name + 'conv2d', conv2d_layer)
+
+        if bn is True:
+            bn_layer = nn.BatchNorm2d(num_features=out_channels,
+                                      eps=eps,
+                                      momentum=momentum)
+            self.add_module(name + 'bn2d', bn_layer)
+
+        if activation_fn is not None:
+            self.add_module(name + 'activation', activation_fn)
+
+
+class conv2d_transpose(nn.Sequential):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride,
+                 padding,
+                 name,
+                 bias=True,
+                 activation_fn=nn.ReLU(inplace=True),
+                 bn=True,
+                 eps=1e-6,
+                 momentum=0.99):
+        super(conv2d_transpose, self).__init__()
+        conv2d_transpose_layer = nn.ConvTranspose2d(in_channels=in_channels,
+                                                    out_channels=out_channels,
+                                                    kernel_size=kernel_size,
+                                                    stride=stride,
+                                                    padding=padding,
+                                                    bias=bias)
+        nn.init.xavier_normal_(conv2d_transpose_layer.weight.data)
+        if bias is True:
+            nn.init.constant_(conv2d_transpose_layer.bias.data, 0)
+        self.add_module(name + 'conv2d_transpose', conv2d_transpose_layer)
+
+        if bn is True:
+            bn_layer = nn.BatchNorm2d(num_features=out_channels,
+                                      eps=eps,
+                                      momentum=momentum)
+            self.add_module(name + 'bn2d', bn_layer)
+
+        if activation_fn is not None:
+            self.add_module(name + 'activation', activation_fn)
 
 
 class SharedMLP(nn.Sequential):
