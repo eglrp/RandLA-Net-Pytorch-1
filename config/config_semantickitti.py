@@ -1,3 +1,11 @@
+'''
+Author: your name
+Date: 2020-11-30 09:38:41
+LastEditTime: 2020-12-02 09:02:31
+LastEditors: Please set LastEditors
+Description: In User Settings Edit
+FilePath: /RandLA-Net-Pytorch/config/config_semantickitti.py
+'''
 #! ~/.miniconda3/envs/pytorch/bin/python
 
 
@@ -9,8 +17,8 @@ class ConfigSemanticKITTI:
     num_classes = 19  # Number of valid classes
     sub_grid_size = 0.06  # preprocess_parameter
 
-    batch_size = 2  # batch_size during training
-    val_batch_size = 2  # batch_size during validation and test
+    batch_size = 28  # batch_size during training
+    val_batch_size = 28  # batch_size during validation and test
     train_steps = 500  # Number of steps per epochs
     val_steps = 100  # Number of validation steps per epoch
 

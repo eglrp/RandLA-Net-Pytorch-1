@@ -81,6 +81,7 @@ class network:
 
         self.FLAGS = FLAGS
         self.end_points = {}
+        self.stat_dict = {}
         self.best_iou = [0]
         self.mIou_list = [0]
 
@@ -102,7 +103,6 @@ class network:
         self.writer.add_scalar('learning rate', lr, epoch)
 
     def train_one_epoch(self, epoch_count):
-        stat_dict = {}
         self.adjust_learning_rate(epoch_count)
         self.net.train()
         iou_calc = IoUCalculator(self.config)
@@ -152,17 +152,19 @@ class network:
 
             for key in self.end_points:
                 if 'loss' in key or 'acc' in key or 'iou' in key:
-                    if key not in stat_dict:
-                        stat_dict[key] = 0
-                    stat_dict[key] += self.end_points[key].item()
+                    if key not in self.stat_dict:
+                        self.stat_dict[key] = 0
+                    self.stat_dict[key] += self.end_points[key].item()
 
             batch_interval = 50
             if (batch_idx + 1) % batch_interval == 0:
                 message = 'Step {:08d} L_out={:5.6f} Acc={:4.6f} ' '---{:8.2f} ms/batch'
-                loss_avg = stat_dict['loss'] / batch_interval
-                acc_avg = stat_dict['acc'] / batch_interval
-                stat_dict['loss'] = 0
-                stat_dict['acc'] = 0
+                loss_avg = 0
+                acc_avg = 0
+                loss_avg = self.stat_dict['loss'] / batch_interval
+                acc_avg = self.stat_dict['acc'] / batch_interval
+                self.stat_dict['loss'] = 0
+                self.stat_dict['acc'] = 0
                 log_out(
                     message.format(
                         epoch_count * len(self.train_dataloader) + batch_idx +
@@ -179,16 +181,15 @@ class network:
         mean_iou, iou_list = iou_calc.compute_iou()
         # tensorboard
         self.writer.add_scalar(
-            'Mean IOU/Train', mean_iou * 100,
+            'mean_iou/Train', mean_iou * 100,
             ((epoch_count + 1) * len(self.train_dataloader)))
-        s = 'Train IoU:'
+        s = 'train IoU:'
         for iou_tmp in iou_list:
             s += '{:5.2f} '.format(100 * iou_tmp)
         log_out(s, self.f_out)
         self.writer.close()
 
     def evaluate_one_epoch(self, epoch_count):
-        stat_dict = {}
         self.net.eval()  # set model to eval mode (for bn and dp)
         iou_calc = IoUCalculator(self.config)
         for batch_idx, batch_data in enumerate(self.test_dataloader):
@@ -234,18 +235,19 @@ class network:
 
             for key in self.end_points:
                 if 'loss' in key or 'acc' in key or 'iou' in key:
-                    if key not in stat_dict:
-                        stat_dict[key] = 0
-                    stat_dict[key] += self.end_points[key].item()
+                    if key not in self.stat_dict:
+                        self.stat_dict[key] = 0
+                    self.stat_dict[key] += self.end_points[key].item()
 
             batch_interval = 50
             if (batch_idx + 1) % batch_interval == 0:
                 message = 'Step {:08d} L_out={:5.6f} Acc={:4.6f} ' '---{:8.2f} ms/batch'
-                loss_avg = stat_dict['loss'] / batch_interval
-                acc_avg = stat_dict['acc'] / batch_interval
-                stat_dict['loss'] = 0
-                stat_dict['acc'] = 0
-
+                loss_avg = 0
+                acc_avg = 0
+                loss_avg = self.stat_dict['loss'] / batch_interval
+                acc_avg = self.stat_dict['acc'] / batch_interval
+                self.stat_dict['loss'] = 0
+                self.stat_dict['acc'] = 0
                 log_out(
                     message.format(
                         epoch_count * len(self.test_dataloader) + batch_idx +
@@ -261,7 +263,7 @@ class network:
 
         mean_iou, iou_list = iou_calc.compute_iou()
         log_out('eval mean IoU:{:.1f}'.format(mean_iou * 100), self.f_out)
-        self.writer.add_scalar('Mean IOU/Test', mean_iou * 100,
+        self.writer.add_scalar('mean_iou/Test', mean_iou * 100,
                                ((epoch_count + 1) * len(self.test_dataloader)))
         s = 'eval IoU:'
         for iou_tmp in iou_list:
@@ -289,7 +291,8 @@ class network:
 
     def save_params(self, best_iou, current_iou, epoch):
         save_dict = {
-            'epoch': epoch + 1,
+            'epoch': epoch +
+            1,  # after training one epoch, the start_epoch should be epoch+1
             'optimizer_state_dict': self.optimizer.state_dict(),
         }
 
@@ -301,6 +304,7 @@ class network:
         current_iou = float(current_iou)
         if current_iou > best_iou[0]:
             best_iou[0] = current_iou
+            # net.save_parameters('{:s}_best.params'.format(prefix, epoch, current_map))
             torch.save(
                 save_dict,
                 os.path.join(self.FLAGS.log_dir,
